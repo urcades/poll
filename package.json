@@ -1,0 +1,11 @@
+{
+  "name": "minimal-loomio-voting",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --hot src/main.ts",
+    "start": "bun run src/main.ts",
+    "test": "bun test"
+  }
+}

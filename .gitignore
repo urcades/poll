@@ -1,0 +1,12 @@
+node_modules/
+
+# Local runtime state
+work/
+
+# Browser/smoke-test artifacts
+outputs/
+
+# Logs and environment
+*.log
+.env
+.env.*
