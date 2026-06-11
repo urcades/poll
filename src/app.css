@@ -1,0 +1,321 @@
+body {
+  font-size: var(--font-size-default, 14px);
+  line-height: var(--line-height-default, 18px);
+  letter-spacing: 0;
+  color: var(--color-ink);
+  background: var(--color-page);
+  --app-surface-muted: color-mix(in srgb, var(--color-surface) 86%, var(--color-page));
+  --app-surface-subtle: color-mix(in srgb, var(--color-ink) 4%, var(--color-surface));
+  --app-control-border: var(--color-disabled-background);
+  --app-control-background: var(--color-surface);
+  --app-control-active-background: var(--color-control-subtle);
+  --app-proposal-color: light-dark(#6f7571, #b7bdb9);
+  --app-choose-color: light-dark(#2878bd, #8ac6ff);
+  --app-score-color: light-dark(#9a6418, #efbf78);
+  --app-rank-color: light-dark(#6b5fb5, #bdb7ff);
+  --app-time-color: light-dark(#3b7f58, #8fd6ad);
+}
+
+body > div > :not(.page-header) {
+  width: min(100%, 980px);
+  margin-inline: auto;
+  padding-inline: 24px;
+}
+
+textarea {
+  resize: vertical;
+}
+
+select,
+summary {
+  cursor: pointer;
+}
+
+input:disabled,
+select:disabled,
+textarea:disabled {
+  cursor: not-allowed;
+}
+
+fieldset {
+  min-inline-size: 0;
+  border: 0;
+  padding: 0;
+}
+
+legend {
+  padding: 0 4px;
+}
+
+a {
+  color: var(--color-accent);
+  text-decoration-thickness: 0.08em;
+  text-underline-offset: 0.14em;
+}
+
+ul,
+ol {
+  padding-left: 1.5rem;
+}
+
+p + p {
+  margin-top: 8px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.actions form {
+  margin: 0;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.card,
+fieldset {
+  color: var(--color-ink);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  padding: 12px;
+  border-radius: var(--radius-control, 9px);
+}
+
+fieldset.radio-group {
+  border: 0;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.radio-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 4px;
+}
+
+.card > * + * {
+  margin-top: 8px;
+}
+
+section > * + * {
+  margin-top: 12px;
+}
+
+form > * + * {
+  margin-top: 16px;
+}
+
+fieldset > * + * {
+  margin-top: 10px;
+}
+
+.type-help {
+  margin: 16px 0;
+}
+
+.type-help > * + * {
+  margin-top: 8px;
+}
+
+.option-editor {
+  margin: 16px 0 8px;
+}
+
+.option-editor-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.option-editor-head h2 {
+  font-size: 1rem;
+  font-weight: 400;
+  margin: 0;
+}
+
+.option-blocks {
+  display: grid;
+  gap: 8px;
+}
+
+.option-block {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+  color: var(--color-ink);
+  border: 1px solid var(--color-border);
+  border-left-width: 8px;
+  padding: 10px;
+  border-radius: var(--radius-control, 9px);
+  background: var(--app-surface-muted);
+}
+
+.option-block-proposal,
+.option-block-sense_check,
+.option-block-consent,
+.option-block-consensus,
+.option-block-majority {
+  background: var(--app-surface-subtle);
+}
+
+.option-block-consent,
+.option-block-majority {
+  border-left-color: var(--app-proposal-color);
+}
+
+.option-block-consensus {
+  border-left-color: color-mix(in srgb, var(--app-proposal-color) 72%, var(--color-accent));
+}
+
+.option-block-sense_check {
+  border-left-color: color-mix(in srgb, var(--app-proposal-color) 52%, transparent);
+}
+
+.option-block-choose,
+.option-block-approval {
+  border-left-color: var(--app-choose-color);
+}
+
+.option-block-score,
+.option-block-allocate {
+  border-left-color: var(--app-score-color);
+}
+
+.option-block-rank,
+.option-block-irv,
+.option-block-stv {
+  border-left-color: var(--app-rank-color);
+}
+
+.option-block-time_poll {
+  border-left-color: var(--app-time-color);
+}
+
+.option-fields {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(220px, 2fr);
+  gap: 8px;
+}
+
+.option-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: end;
+}
+
+.raw-options {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.advanced-settings {
+  margin: 16px 0;
+}
+
+.advanced-settings summary {
+  cursor: pointer;
+}
+
+.field-help {
+  color: var(--color-muted);
+  font-size: 0.95rem;
+  margin-top: 4px;
+  max-width: 680px;
+}
+
+label {
+  display: block;
+}
+
+label > input:not([type="checkbox"]):not([type="radio"]),
+label > select,
+label > textarea {
+  display: block;
+  margin-top: 4px;
+}
+
+.inline-field {
+  display: grid;
+  grid-template-columns: 120px minmax(220px, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  margin: 10px 0;
+}
+
+.inline-field label {
+  margin: 0;
+}
+
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  width: 100%;
+  max-width: none;
+  min-height: var(--control-block-size, 32px);
+  color: var(--color-ink);
+  background: var(--app-control-background);
+  border: 1px solid var(--app-control-border);
+  border-radius: var(--radius-control, 9px);
+  padding: 6px 9px;
+}
+
+textarea {
+  min-height: auto;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--color-accent);
+}
+
+input:disabled,
+select:disabled,
+textarea:disabled {
+  color: var(--color-disabled-foreground);
+  background: var(--color-disabled-background);
+}
+
+section {
+  margin: 24px 0;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.hint {
+  color: var(--color-muted);
+  font-size: 0.95rem;
+}
+
+@media (max-width: 640px) {
+  .inline-field,
+  .option-block,
+  .option-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .option-actions {
+    justify-content: start;
+  }
+}

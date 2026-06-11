@@ -1,8 +1,73 @@
-import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname } from "node:path";
 import type { Option, Poll, PollConfig, PollStatus, PollType, Vote } from "./types";
 import { defaultConfigFor } from "./templates";
+
+const require = createRequire(import.meta.url);
+
+type SqliteDatabase = {
+  close(): void;
+  exec(sql: string): void;
+  run(sql: string, ...params: unknown[]): unknown;
+  query(sql: string): {
+    all(...params: unknown[]): unknown[];
+    get(...params: unknown[]): unknown;
+    run(...params: unknown[]): { changes: number; lastInsertRowid?: number | bigint };
+  };
+  transaction<T>(fn: () => T): () => T;
+};
+
+type BunSqliteModule = {
+  Database: new (path: string, options: { create: boolean }) => SqliteDatabase;
+};
+
+type NodeSqliteModule = {
+  DatabaseSync: new (path: string) => {
+    close(): void;
+    exec(sql: string): void;
+    prepare(sql: string): {
+      all(...params: unknown[]): unknown[];
+      get(...params: unknown[]): unknown;
+      run(...params: unknown[]): { changes: number; lastInsertRowid?: number | bigint };
+    };
+  };
+};
+
+function createDatabase(path: string): SqliteDatabase {
+  if (!("Bun" in globalThis)) return createNodeDatabase(path);
+  const { Database } = require("bun:sqlite") as BunSqliteModule;
+  return new Database(path, { create: true });
+}
+
+function createNodeDatabase(path: string): SqliteDatabase {
+  const { DatabaseSync } = require("node:sqlite") as NodeSqliteModule;
+  const db = new DatabaseSync(path);
+  return {
+    close: () => db.close(),
+    exec: (sql) => db.exec(sql),
+    run: (sql, ...params) => db.prepare(sql).run(...params),
+    query: (sql) => {
+      const statement = db.prepare(sql);
+      return {
+        all: (...params) => statement.all(...params),
+        get: (...params) => statement.get(...params),
+        run: (...params) => statement.run(...params)
+      };
+    },
+    transaction: (fn) => () => {
+      db.exec("BEGIN");
+      try {
+        const result = fn();
+        db.exec("COMMIT");
+        return result;
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+    }
+  };
+}
 
 interface PollRow {
   id: number;
@@ -51,11 +116,11 @@ export interface UpdatePollInput extends CreatePollInput {
 }
 
 export class Store {
-  db: Database;
+  db: SqliteDatabase;
 
   constructor(path = "work/votes.sqlite") {
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
-    this.db = new Database(path, { create: true });
+    this.db = createDatabase(path);
     this.db.run("PRAGMA foreign_keys = ON");
     this.migrate();
   }

@@ -2,36 +2,49 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createApp, type App } from "../src/server";
+import { POST as createPollRoute } from "../src/routes/api/polls/+server";
+import { POST as editPollRoute } from "../src/routes/api/polls/[id]/+server";
+import { POST as openPollRoute } from "../src/routes/api/polls/[id]/open/+server";
+import { POST as closePollRoute } from "../src/routes/api/polls/[id]/close/+server";
+import { POST as voteRoute } from "../src/routes/api/polls/[id]/votes/+server";
+import { GET as exportCsvRoute } from "../src/routes/poll/[id]/export.csv/+server";
+import { GET as exportJsonRoute } from "../src/routes/poll/[id]/export.json/+server";
+import { load as pollLoad } from "../src/routes/poll/[id]/+page.server";
+import { resetStoreForTesting } from "../src/lib/server/app";
 import { templates } from "../src/templates";
+import type { Store } from "../src/db";
 
 let cleanupPaths: string[] = [];
+let store: Store | null = null;
 
 afterEach(() => {
+  store?.close();
+  store = null;
   for (const path of cleanupPaths) rmSync(path, { recursive: true, force: true });
   cleanupPaths = [];
 });
 
-function appFixture(): App {
+function storeFixture(): Store {
   const dir = mkdtempSync(join(tmpdir(), "loomio-lite-"));
   cleanupPaths.push(dir);
-  return createApp(join(dir, "test.sqlite"));
+  store = resetStoreForTesting(join(dir, "test.sqlite"));
+  return store;
 }
 
-function request(app: App, path: string, init?: RequestInit) {
-  return app.fetch(new Request(`http://local.test${path}`, init));
-}
-
-async function postJson(app: App, path: string, body: unknown) {
-  return request(app, path, {
+function jsonRequest(body: unknown): Request {
+  return new Request("http://local.test", {
     method: "POST",
     headers: { "content-type": "application/json", accept: "application/json" },
     body: JSON.stringify(body)
   });
 }
 
-async function createPoll(app: App, overrides: Record<string, unknown> = {}) {
-  const response = await postJson(app, "/api/polls", {
+async function postJson(handler: Function, params: Record<string, string>, body: unknown): Promise<Response> {
+  return await handler({ params, request: jsonRequest(body) });
+}
+
+async function createPoll(overrides: Record<string, unknown> = {}) {
+  const response = await postJson(createPollRoute, {}, {
     type: "choose",
     title: "Dinner",
     details: "Pick a place",
@@ -42,88 +55,71 @@ async function createPoll(app: App, overrides: Record<string, unknown> = {}) {
   return await response.json() as { id: number };
 }
 
-async function openPoll(app: App, id: number) {
-  const response = await postJson(app, `/api/polls/${id}/open`, {});
+async function openPoll(id: number) {
+  const response = await postJson(openPollRoute, { id: String(id) }, {});
   expect(response.status).toBe(200);
 }
 
-describe("server integration", () => {
-  test("new poll page exposes timing quick-set controls", async () => {
-    const app = appFixture();
-    const html = await (await request(app, "/new")).text();
-    expect(html).toContain('name="opensAt"');
-    expect(html).toContain('data-set-time="now"');
-    expect(html).toContain('name="closesAt"');
-    expect(html).toContain('data-set-time="end-of-day"');
-    expect(html).toContain("End of Day");
-  });
+async function closePoll(id: number) {
+  const response = await postJson(closePollRoute, { id: String(id) }, {});
+  expect(response.status).toBe(200);
+}
 
-  test("new poll page keeps advanced settings collapsed with helper text", async () => {
-    const app = appFixture();
-    const html = await (await request(app, "/new")).text();
-    expect(html).toContain('<details class="advanced-settings">');
-    expect(html).toContain("<summary>Advanced settings</summary>");
-    expect(html).toContain("Quorum is the minimum participation threshold");
-    expect(html).toContain("The number of people allowed or expected to vote");
-    expect(html).not.toContain("Reason length cap");
-    expect(html).not.toContain('name="reasonLengthCap"');
-  });
+async function loadPoll(id: number, voterName = "") {
+  return await pollLoad({
+    params: { id: String(id) },
+    url: new URL(`http://local.test/poll/${id}${voterName ? `?voterName=${encodeURIComponent(voterName)}` : ""}`)
+  } as never);
+}
 
-  test("new poll page includes richer type guidance metadata", async () => {
-    const app = appFixture();
-    const html = await (await request(app, "/new?type=rank")).text();
-    expect(html).toContain("Example:");
-    expect(html).toContain("Results:");
-    expect(html).toContain("Learn more:");
-    expect(html).toContain("Rank your top three trip ideas");
-    expect(html).toContain("https://en.wikipedia.org/wiki/Borda_count");
-    expect(html).toContain("https://help.loomio.com/en/user_manual/polls/proposal_types/");
-  });
-
-  test("creates each visible template as a draft", async () => {
-    const app = appFixture();
+describe("SvelteKit app integration", () => {
+  test("creates each template as a draft", async () => {
+    const db = storeFixture();
     for (const template of templates) {
-      const result = await createPoll(app, {
+      const result = await createPoll({
         type: template.type,
         title: template.label,
         optionsText: template.defaultOptions.map((option) => option.label).join("\n"),
         seats: template.type === "stv" ? 1 : undefined
       });
       expect(result.id).toBeGreaterThan(0);
-      expect(app.store.getPoll(result.id)?.status).toBe("draft");
+      expect(db.getPoll(result.id)?.status).toBe("draft");
     }
-    expect(app.store.listPolls()).toHaveLength(templates.length);
+    expect(db.listPolls()).toHaveLength(templates.length);
   });
 
-  test("draft appears on home, can be edited, previewed, and opened", async () => {
-    const app = appFixture();
-    const { id } = await createPoll(app, { title: "Draft dinner" });
-    let html = await (await request(app, "/")).text();
-    expect(html.indexOf("Draft dinner")).toBeGreaterThan(html.indexOf("<h2>Drafts</h2>"));
-    html = await (await request(app, `/poll/${id}`)).text();
-    expect(html).toContain("Draft preview");
-    expect(html).toContain("Open voting");
+  test("drafts can be edited, previewed, opened, and closed", async () => {
+    const db = storeFixture();
+    const { id } = await createPoll({ title: "Draft dinner" });
+    let page = await loadPoll(id);
+    expect(page.poll.status).toBe("draft");
+    expect(page.showResults).toBe(false);
 
-    const edit = await postJson(app, `/api/polls/${id}`, {
+    const edit = await postJson(editPollRoute, { id: String(id) }, {
       type: "approval",
       title: "Edited dinner",
       details: "Updated",
       optionsText: "Pizza\nSushi"
     });
     expect(edit.status).toBe(200);
-    expect(app.store.getPoll(id)?.type).toBe("approval");
-    expect(app.store.getOptions(id)).toHaveLength(2);
+    expect(db.getPoll(id)?.type).toBe("approval");
+    expect(db.getOptions(id)).toHaveLength(2);
 
-    await openPoll(app, id);
-    expect(app.store.getPoll(id)?.status).toBe("open");
-    html = await (await request(app, `/poll/${id}`)).text();
-    expect(html).toContain("Approve any options");
+    await openPoll(id);
+    expect(db.getPoll(id)?.status).toBe("open");
+    page = await loadPoll(id);
+    expect(page.poll.status).toBe("open");
+    expect(page.options.map((option) => option.label)).toEqual(["Pizza", "Sushi"]);
+
+    await closePoll(id);
+    expect(db.getPoll(id)?.status).toBe("closed");
+    expect((await loadPoll(id)).showResults).toBe(true);
   });
 
   test("rejects poll setup constraints that conflict with option count or fixed semantics", async () => {
-    const app = appFixture();
+    storeFixture();
 
-    let response = await postJson(app, "/api/polls", {
+    let response = await postJson(createPollRoute, {}, {
       type: "rank",
       title: "Bad rank",
       optionsText: "A\nB\nC",
@@ -132,7 +128,7 @@ describe("server integration", () => {
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ error: "Number of ranked choices cannot exceed the number of options." });
 
-    response = await postJson(app, "/api/polls", {
+    response = await postJson(createPollRoute, {}, {
       type: "choose",
       title: "Bad choose",
       optionsText: "A\nB",
@@ -142,7 +138,7 @@ describe("server integration", () => {
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ error: "Maximum choices cannot exceed the number of options." });
 
-    response = await postJson(app, "/api/polls", {
+    response = await postJson(createPollRoute, {}, {
       type: "stv",
       title: "Bad STV",
       optionsText: "A\nB",
@@ -151,7 +147,7 @@ describe("server integration", () => {
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ error: "STV seats must be less than the number of candidates." });
 
-    response = await postJson(app, "/api/polls", {
+    response = await postJson(createPollRoute, {}, {
       type: "majority",
       title: "Bad majority",
       optionsText: "Maybe\nNo"
@@ -161,148 +157,128 @@ describe("server integration", () => {
   });
 
   test("submits and updates a vote by display name", async () => {
-    const app = appFixture();
-    const { id } = await createPoll(app);
-    await openPoll(app, id);
-    const options = app.store.getOptions(id);
-    await postJson(app, `/api/polls/${id}/votes`, {
+    const db = storeFixture();
+    const { id } = await createPoll();
+    await openPoll(id);
+    const options = db.getOptions(id);
+    await postJson(voteRoute, { id: String(id) }, {
       voterName: "Ada",
       selected: [String(options[0]!.id)],
       reason: "First"
     });
-    await postJson(app, `/api/polls/${id}/votes`, {
+    await postJson(voteRoute, { id: String(id) }, {
       voterName: "Ada",
       selected: [String(options[1]!.id)],
       reason: "Updated"
     });
-    const votes = app.store.getVotes(id);
+    const votes = db.getVotes(id);
     expect(votes).toHaveLength(1);
     expect(votes[0]!.reason).toBe("Updated");
     expect((votes[0]!.ballot as { selected: number[] }).selected).toEqual([options[1]!.id]);
   });
 
-  test("home page separates active and closed sections", async () => {
-    const app = appFixture();
-    const active = await createPoll(app, { title: "Active poll" });
-    await openPoll(app, active.id);
-    const closed = await createPoll(app, { title: "Closed poll" });
-    await openPoll(app, closed.id);
-    app.store.closePoll(closed.id);
-    const html = await (await request(app, "/")).text();
-    expect(html.indexOf("Active poll")).toBeGreaterThan(html.indexOf("<h2>Active votes</h2>"));
-    expect(html.indexOf("Closed poll")).toBeGreaterThan(html.indexOf("<h2>Closed votes</h2>"));
-    expect(app.store.getPoll(active.id)?.manuallyClosedAt).toBeNull();
-  });
-
   test("hide-results behavior before vote, after vote, and after close", async () => {
-    const app = appFixture();
-    const { id } = await createPoll(app, { hideResults: "after_vote" });
-    await openPoll(app, id);
-    let html = await (await request(app, `/poll/${id}`)).text();
-    expect(html).toContain("Results are hidden until you vote");
-    const options = app.store.getOptions(id);
-    await postJson(app, `/api/polls/${id}/votes`, { voterName: "Ada", selected: [String(options[0]!.id)] });
-    html = await (await request(app, `/poll/${id}?voterName=Ada`)).text();
-    expect(html).toContain("Leading:");
+    const db = storeFixture();
+    const { id } = await createPoll({ hideResults: "after_vote" });
+    await openPoll(id);
+    expect((await loadPoll(id)).showResults).toBe(false);
 
-    const closedHidden = await createPoll(app, { title: "Closed hidden", hideResults: "after_close" });
-    await openPoll(app, closedHidden.id);
-    html = await (await request(app, `/poll/${closedHidden.id}`)).text();
-    expect(html).toContain("Results are hidden until this poll closes");
-    await postJson(app, `/api/polls/${closedHidden.id}/close`, {});
-    html = await (await request(app, `/poll/${closedHidden.id}`)).text();
-    expect(html).toContain("No quorum target");
+    const options = db.getOptions(id);
+    await postJson(voteRoute, { id: String(id) }, { voterName: "Ada", selected: [String(options[0]!.id)] });
+    expect((await loadPoll(id, "Ada")).showResults).toBe(true);
+
+    const closedHidden = await createPoll({ title: "Closed hidden", hideResults: "after_close" });
+    await openPoll(closedHidden.id);
+    expect((await loadPoll(closedHidden.id)).showResults).toBe(false);
+    await closePoll(closedHidden.id);
+    expect((await loadPoll(closedHidden.id)).showResults).toBe(true);
   });
 
   test("reason required and disabled validation", async () => {
-    const app = appFixture();
-    const required = await createPoll(app, { title: "Required", reasonMode: "required" });
-    await openPoll(app, required.id);
-    const options = app.store.getOptions(required.id);
-    const bad = await postJson(app, `/api/polls/${required.id}/votes`, { voterName: "Ada", selected: [String(options[0]!.id)] });
+    const db = storeFixture();
+    const required = await createPoll({ title: "Required", reasonMode: "required" });
+    await openPoll(required.id);
+    const options = db.getOptions(required.id);
+    const bad = await postJson(voteRoute, { id: String(required.id) }, { voterName: "Ada", selected: [String(options[0]!.id)] });
     expect(bad.status).toBe(400);
     expect(await bad.json()).toEqual({ error: "A reason is required." });
 
-    const disabled = await createPoll(app, { title: "Disabled", reasonMode: "disabled" });
-    await openPoll(app, disabled.id);
-    const disabledOptions = app.store.getOptions(disabled.id);
-    const good = await postJson(app, `/api/polls/${disabled.id}/votes`, {
+    const disabled = await createPoll({ title: "Disabled", reasonMode: "disabled" });
+    await openPoll(disabled.id);
+    const disabledOptions = db.getOptions(disabled.id);
+    const good = await postJson(voteRoute, { id: String(disabled.id) }, {
       voterName: "Ben",
       selected: [String(disabledOptions[0]!.id)],
       reason: "Ignored"
     });
     expect(good.status).toBe(200);
-    expect(app.store.getVotes(disabled.id)[0]!.reason).toBe("");
+    expect(db.getVotes(disabled.id)[0]!.reason).toBe("");
   });
 
   test("vote reasons are not capped", async () => {
-    const app = appFixture();
-    const { id } = await createPoll(app, { reasonMode: "optional" });
-    await openPoll(app, id);
-    const options = app.store.getOptions(id);
+    const db = storeFixture();
+    const { id } = await createPoll({ reasonMode: "optional" });
+    await openPoll(id);
+    const options = db.getOptions(id);
     const longReason = "Long reason. ".repeat(200);
-    const response = await postJson(app, `/api/polls/${id}/votes`, {
+    const response = await postJson(voteRoute, { id: String(id) }, {
       voterName: "Ada",
       selected: [String(options[0]!.id)],
       reason: longReason
     });
     expect(response.status).toBe(200);
-    expect(app.store.getVotes(id)[0]!.reason).toBe(longReason.trim());
+    expect(db.getVotes(id)[0]!.reason).toBe(longReason.trim());
   });
 
   test("exports are available only after close and redact anonymous voters", async () => {
-    const app = appFixture();
-    const { id } = await createPoll(app, { anonymous: true });
-    await openPoll(app, id);
-    let response = await request(app, `/poll/${id}/export.json`);
+    const db = storeFixture();
+    const { id } = await createPoll({ anonymous: true });
+    await openPoll(id);
+    let response = await exportJsonRoute({ params: { id: String(id) } } as never);
     expect(response.status).toBe(400);
 
-    const options = app.store.getOptions(id);
-    await postJson(app, `/api/polls/${id}/votes`, {
+    const options = db.getOptions(id);
+    await postJson(voteRoute, { id: String(id) }, {
       voterName: "Ada",
       selected: [String(options[0]!.id)],
       reason: "Private"
     });
-    await postJson(app, `/api/polls/${id}/close`, {});
+    await closePoll(id);
 
-    let html = await (await request(app, `/poll/${id}`)).text();
-    expect(html).toContain("Export JSON");
-    expect(html).toContain("Export CSV");
-
-    response = await request(app, `/poll/${id}/export.json`);
+    response = await exportJsonRoute({ params: { id: String(id) } } as never);
     expect(response.status).toBe(200);
     const json = await response.json() as { votes: Array<{ voterName: string; reason: string }> };
     expect(json.votes[0]).toEqual(expect.objectContaining({ voterName: "Voter 1", reason: "" }));
 
-    const csv = await (await request(app, `/poll/${id}/export.csv`)).text();
+    const csv = await (await exportCsvRoute({ params: { id: String(id) } } as never)).text();
     expect(csv).toContain('"Voter 1"');
     expect(csv).not.toContain("Ada");
     expect(csv).not.toContain("Private");
   });
 
   test("approval and IRV can be opened, voted, closed, and exported", async () => {
-    const app = appFixture();
-    const approval = await createPoll(app, { type: "approval", title: "Approval", optionsText: "A\nB\nC" });
-    await openPoll(app, approval.id);
-    let options = app.store.getOptions(approval.id);
-    await postJson(app, `/api/polls/${approval.id}/votes`, {
+    const db = storeFixture();
+    const approval = await createPoll({ type: "approval", title: "Approval", optionsText: "A\nB\nC" });
+    await openPoll(approval.id);
+    let options = db.getOptions(approval.id);
+    await postJson(voteRoute, { id: String(approval.id) }, {
       voterName: "Ada",
       selected: [String(options[0]!.id), String(options[1]!.id)]
     });
-    await postJson(app, `/api/polls/${approval.id}/close`, {});
-    expect(await (await request(app, `/poll/${approval.id}/export.csv`)).text()).toContain("Approval");
+    await closePoll(approval.id);
+    expect(await (await exportCsvRoute({ params: { id: String(approval.id) } } as never)).text()).toContain("Approval");
 
-    const irv = await createPoll(app, { type: "irv", title: "IRV", optionsText: "A\nB\nC" });
-    await openPoll(app, irv.id);
-    options = app.store.getOptions(irv.id);
-    await postJson(app, `/api/polls/${irv.id}/votes`, {
+    const irv = await createPoll({ type: "irv", title: "IRV", optionsText: "A\nB\nC" });
+    await openPoll(irv.id);
+    options = db.getOptions(irv.id);
+    await postJson(voteRoute, { id: String(irv.id) }, {
       voterName: "Ada",
-      [`rank_1`]: String(options[0]!.id),
-      [`rank_2`]: String(options[1]!.id)
+      rank_1: String(options[0]!.id),
+      rank_2: String(options[1]!.id)
     });
-    await postJson(app, `/api/polls/${irv.id}/close`, {});
-    const html = await (await request(app, `/poll/${irv.id}`)).text();
-    expect(html).toContain("Round log");
-    expect(html).toContain("Export JSON");
+    await closePoll(irv.id);
+    const page = await loadPoll(irv.id);
+    expect(page.tally.roundLogs?.length).toBeGreaterThan(0);
+    expect(await (await exportJsonRoute({ params: { id: String(irv.id) } } as never)).text()).toContain('"IRV"');
   });
 });
