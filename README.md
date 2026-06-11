@@ -1,4 +1,4 @@
-# Minimal Loomio Voting
+# Poll
 
 A small SvelteKit + Bun voting app for running informal votes with people who have a shared link.
 
