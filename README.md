@@ -62,6 +62,50 @@ http://127.0.0.1:3000/
 
 The dev server is configured to listen on port `3000`.
 
+## Serving On A Tailnet With Caddy
+
+For a durable local deployment, build the SvelteKit app and run the Node adapter on a loopback-only port. Caddy can then terminate HTTPS on the Tailscale address and proxy requests to that local process.
+
+Build the app:
+
+```bash
+bun run build
+```
+
+Run the production server on a private local port:
+
+```bash
+HOST=127.0.0.1 \
+PORT=4179 \
+DB_PATH=/Users/edouard/Developer/poll/work/votes.sqlite \
+node build/index.js
+```
+
+Use a LaunchAgent, systemd unit, or another process manager for long-running use. The important details are that `HOST` stays on `127.0.0.1`, `PORT` matches the Caddy upstream, and `DB_PATH` points at the SQLite database you want to keep.
+
+Example Caddy site using a Tailscale certificate:
+
+```caddyfile
+{
+	auto_https disable_redirects
+}
+
+https://violaceae-1.saga-owl.ts.net:10000 {
+	bind 100.114.219.31
+	tls /Users/edouard/.config/lifting-plate-calculator/certs/violaceae-1.saga-owl.ts.net.crt /Users/edouard/.config/lifting-plate-calculator/certs/violaceae-1.saga-owl.ts.net.key
+
+	reverse_proxy 127.0.0.1:4179
+}
+```
+
+With that shape, this app is available to devices on the same Tailscale network at:
+
+```text
+https://violaceae-1.saga-owl.ts.net:10000/
+```
+
+If adapting this for another machine, replace the hostname, Tailscale IP, certificate paths, and ports. The raw Tailscale IP is useful for binding Caddy, but the `.ts.net` hostname is the better browser URL because it matches the trusted certificate.
+
 ## Useful Commands
 
 Run type and Svelte checks:
