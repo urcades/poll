@@ -1,0 +1,13 @@
+node_modules/
+.svelte-kit/
+build/
+work/
+outputs/
+tests/
+*.log
+.env
+.env.*
+.git/
+fly.toml
+Dockerfile
+README.md

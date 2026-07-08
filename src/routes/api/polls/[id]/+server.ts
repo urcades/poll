@@ -1,9 +1,10 @@
 import { json } from "@sveltejs/kit";
-import { getStore, inputFromRequest } from "$lib/server/app";
+import { getStore, inputFromRequest, isPollAdmin } from "$lib/server/app";
 
-export async function POST({ params, request }) {
+export async function POST({ params, request, cookies }) {
   const poll = getStore().getPoll(Number(params.id));
   if (!poll) return json({ error: "Poll not found." }, { status: 404 });
+  if (!isPollAdmin(cookies, poll.id)) return json({ error: "Only the poll admin can edit this draft." }, { status: 403 });
   if (poll.status !== "draft") return json({ error: "Only draft polls can be edited." }, { status: 400 });
   try {
     const input = { id: poll.id, ...(await inputFromRequest(request)) };

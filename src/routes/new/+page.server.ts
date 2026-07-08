@@ -1,7 +1,7 @@
 import { fail, redirect } from "@sveltejs/kit";
 import { defaultConfigFor, defaultOptionsText } from "../../templates";
 import { POLL_TYPES, type PollType } from "../../types";
-import { getStore, inputFromRequest } from "$lib/server/app";
+import { createPollWithAdmin, inputFromRequest } from "$lib/server/app";
 
 export function load({ url }) {
   const selected = parseType(url.searchParams.get("type")) ?? "sense_check";
@@ -19,11 +19,11 @@ export function load({ url }) {
 }
 
 export const actions = {
-  default: async ({ request }) => {
+  default: async ({ request, cookies }) => {
     let pollId: number;
     try {
       const input = await inputFromRequest(request);
-      pollId = getStore().createPoll(input);
+      pollId = createPollWithAdmin(input, cookies).id;
     } catch (error) {
       return fail(400, { error: error instanceof Error ? error.message : String(error) });
     }

@@ -17,9 +17,27 @@ import type { Store } from "../src/db";
 let cleanupPaths: string[] = [];
 let store: Store | null = null;
 
+type CookieJar = {
+  get(name: string): string | undefined;
+  set(name: string, value: string): void;
+};
+
+function cookieJar(): CookieJar {
+  const jar = new Map<string, string>();
+  return {
+    get: (name) => jar.get(name),
+    set: (name, value) => {
+      jar.set(name, value);
+    }
+  };
+}
+
+let cookies = cookieJar();
+
 afterEach(() => {
   store?.close();
   store = null;
+  cookies = cookieJar();
   for (const path of cleanupPaths) rmSync(path, { recursive: true, force: true });
   cleanupPaths = [];
 });
@@ -39,8 +57,8 @@ function jsonRequest(body: unknown): Request {
   });
 }
 
-async function postJson(handler: Function, params: Record<string, string>, body: unknown): Promise<Response> {
-  return await handler({ params, request: jsonRequest(body) });
+async function postJson(handler: Function, params: Record<string, string>, body: unknown, jar: CookieJar = cookies): Promise<Response> {
+  return await handler({ params, request: jsonRequest(body), cookies: jar });
 }
 
 async function createPoll(overrides: Record<string, unknown> = {}) {
@@ -65,10 +83,19 @@ async function closePoll(id: number) {
   expect(response.status).toBe(200);
 }
 
-async function loadPoll(id: number, voterName = "") {
+async function getExport(handler: Function, id: number, jar: CookieJar = cookies, adminToken = ""): Promise<Response> {
+  return await handler({
+    params: { id: String(id) },
+    url: new URL(`http://local.test/poll/${id}/export${adminToken ? `?admin=${encodeURIComponent(adminToken)}` : ""}`),
+    cookies: jar
+  } as never);
+}
+
+async function loadPoll(id: number, voterName = "", jar: CookieJar = cookies) {
   return await pollLoad({
     params: { id: String(id) },
-    url: new URL(`http://local.test/poll/${id}${voterName ? `?voterName=${encodeURIComponent(voterName)}` : ""}`)
+    url: new URL(`http://local.test/poll/${id}${voterName ? `?voterName=${encodeURIComponent(voterName)}` : ""}`),
+    cookies: jar
   } as never);
 }
 
@@ -187,11 +214,124 @@ describe("SvelteKit app integration", () => {
     await postJson(voteRoute, { id: String(id) }, { voterName: "Ada", selected: [String(options[0]!.id)] });
     expect((await loadPoll(id, "Ada")).showResults).toBe(true);
 
+    // Someone who merely guesses a voter's name (no edit-token cookie) gets nothing.
+    const stranger = cookieJar();
+    expect((await loadPoll(id, "Ada", stranger)).showResults).toBe(false);
+
     const closedHidden = await createPoll({ title: "Closed hidden", hideResults: "after_close" });
     await openPoll(closedHidden.id);
     expect((await loadPoll(closedHidden.id)).showResults).toBe(false);
     await closePoll(closedHidden.id);
     expect((await loadPoll(closedHidden.id)).showResults).toBe(true);
+  });
+
+  test("non-admins cannot edit, open, close, or export a poll", async () => {
+    const db = storeFixture();
+    const { id } = await createPoll();
+    const stranger = cookieJar();
+
+    const editDenied = await postJson(editPollRoute, { id: String(id) }, {
+      type: "choose",
+      title: "Hijacked",
+      optionsText: "A\nB"
+    }, stranger);
+    expect(editDenied.status).toBe(403);
+
+    expect((await postJson(openPollRoute, { id: String(id) }, {}, stranger)).status).toBe(400);
+    await openPoll(id);
+    expect(db.getPoll(id)?.status).toBe("open");
+
+    expect((await postJson(closePollRoute, { id: String(id) }, {}, stranger)).status).toBe(400);
+    expect(db.getPoll(id)?.status).toBe("open");
+    await closePoll(id);
+
+    expect((await getExport(exportJsonRoute, id, stranger)).status).toBe(403);
+    expect((await getExport(exportCsvRoute, id, stranger)).status).toBe(403);
+    expect((await getExport(exportJsonRoute, id)).status).toBe(200);
+
+    // A valid ?admin= token in the URL grants access without the cookie.
+    const token = db.getPollAdminToken(id);
+    expect((await getExport(exportJsonRoute, id, cookieJar(), token)).status).toBe(200);
+
+    // Non-admin page loads hide the admin controls and link.
+    const page = await loadPoll(id, "", stranger);
+    expect(page.isAdmin).toBe(false);
+    expect(page.adminLink).toBeNull();
+    expect(JSON.stringify(page)).not.toContain(token);
+  });
+
+  test("hidden results and voter data never reach the page payload", async () => {
+    const db = storeFixture();
+    const { id } = await createPoll({ hideResults: "after_close" });
+    await openPoll(id);
+    const options = db.getOptions(id);
+    await postJson(voteRoute, { id: String(id) }, { voterName: "Ada", selected: [String(options[0]!.id)], reason: "Secret" });
+
+    const page = await loadPoll(id);
+    expect(page.showResults).toBe(false);
+    expect(page.tally).toBeNull();
+    expect(page.voteCount).toBe(1);
+    expect(JSON.stringify(page)).not.toContain("Secret");
+
+    await closePoll(id);
+    const closedPage = await loadPoll(id);
+    expect(closedPage.tally).not.toBeNull();
+  });
+
+  test("a different browser cannot replace an existing vote by reusing the name", async () => {
+    const db = storeFixture();
+    const { id } = await createPoll();
+    await openPoll(id);
+    const options = db.getOptions(id);
+    const ada = cookieJar();
+    await postJson(voteRoute, { id: String(id) }, { voterName: "Ada", selected: [String(options[0]!.id)] }, ada);
+
+    const impostor = cookieJar();
+    const rejected = await postJson(voteRoute, { id: String(id) }, { voterName: "Ada", selected: [String(options[1]!.id)] }, impostor);
+    expect(rejected.status).toBe(400);
+    expect((db.getVotes(id)[0]!.ballot as { selected: number[] }).selected).toEqual([options[0]!.id]);
+
+    // The original browser can still update its own vote.
+    const updated = await postJson(voteRoute, { id: String(id) }, { voterName: "Ada", selected: [String(options[2]!.id)] }, ada);
+    expect(updated.status).toBe(200);
+    expect((db.getVotes(id)[0]!.ballot as { selected: number[] }).selected).toEqual([options[2]!.id]);
+  });
+
+  test("rejects oversized fields", async () => {
+    const db = storeFixture();
+    let response = await postJson(createPollRoute, {}, {
+      type: "choose",
+      title: "x".repeat(201),
+      optionsText: "A\nB"
+    });
+    expect(response.status).toBe(400);
+    expect((await response.json() as { error: string }).error).toContain("too long");
+
+    const { id } = await createPoll();
+    await openPoll(id);
+    const options = db.getOptions(id);
+    response = await postJson(voteRoute, { id: String(id) }, {
+      voterName: "x".repeat(81),
+      selected: [String(options[0]!.id)]
+    });
+    expect(response.status).toBe(400);
+    expect((await response.json() as { error: string }).error).toContain("too long");
+  });
+
+  test("csv export neutralizes spreadsheet formula payloads", async () => {
+    const db = storeFixture();
+    const { id } = await createPoll();
+    await openPoll(id);
+    const options = db.getOptions(id);
+    await postJson(voteRoute, { id: String(id) }, {
+      voterName: "=HYPERLINK(evil)",
+      selected: [String(options[0]!.id)],
+      reason: "+SUM(A1:A9)"
+    });
+    await closePoll(id);
+    const csv = await (await getExport(exportCsvRoute, id)).text();
+    expect(csv).toContain("\"'=HYPERLINK(evil)\"");
+    expect(csv).toContain("\"'+SUM(A1:A9)\"");
   });
 
   test("reason required and disabled validation", async () => {
@@ -234,7 +374,7 @@ describe("SvelteKit app integration", () => {
     const db = storeFixture();
     const { id } = await createPoll({ anonymous: true });
     await openPoll(id);
-    let response = await exportJsonRoute({ params: { id: String(id) } } as never);
+    let response = await getExport(exportJsonRoute, id);
     expect(response.status).toBe(400);
 
     const options = db.getOptions(id);
@@ -245,15 +385,24 @@ describe("SvelteKit app integration", () => {
     });
     await closePoll(id);
 
-    response = await exportJsonRoute({ params: { id: String(id) } } as never);
+    response = await getExport(exportJsonRoute, id);
     expect(response.status).toBe(200);
-    const json = await response.json() as { votes: Array<{ voterName: string; reason: string }> };
-    expect(json.votes[0]).toEqual(expect.objectContaining({ voterName: "Voter 1", reason: "" }));
+    const json = await response.json() as { votes: Array<{ voterName: string; reason: string; updatedAt: string }> };
+    expect(json.votes[0]).toEqual(expect.objectContaining({ voterName: "Voter 1", reason: "", updatedAt: "" }));
 
-    const csv = await (await exportCsvRoute({ params: { id: String(id) } } as never)).text();
+    const csv = await (await getExport(exportCsvRoute, id)).text();
     expect(csv).toContain('"Voter 1"');
     expect(csv).not.toContain("Ada");
     expect(csv).not.toContain("Private");
+  });
+
+  test("polls past their scheduled close read as closed in the database", async () => {
+    const db = storeFixture();
+    const { id } = await createPoll({ closesAt: new Date(Date.now() - 60_000).toISOString() });
+    await openPoll(id);
+    const poll = db.getPoll(id);
+    expect(poll?.status).toBe("closed");
+    expect(poll?.closedAt).toBeTruthy();
   });
 
   test("approval and IRV can be opened, voted, closed, and exported", async () => {
@@ -266,7 +415,7 @@ describe("SvelteKit app integration", () => {
       selected: [String(options[0]!.id), String(options[1]!.id)]
     });
     await closePoll(approval.id);
-    expect(await (await exportCsvRoute({ params: { id: String(approval.id) } } as never)).text()).toContain("Approval");
+    expect(await (await getExport(exportCsvRoute, approval.id)).text()).toContain("Approval");
 
     const irv = await createPoll({ type: "irv", title: "IRV", optionsText: "A\nB\nC" });
     await openPoll(irv.id);
@@ -278,7 +427,7 @@ describe("SvelteKit app integration", () => {
     });
     await closePoll(irv.id);
     const page = await loadPoll(irv.id);
-    expect(page.tally.roundLogs?.length).toBeGreaterThan(0);
-    expect(await (await exportJsonRoute({ params: { id: String(irv.id) } } as never)).text()).toContain('"IRV"');
+    expect(page.tally?.roundLogs?.length).toBeGreaterThan(0);
+    expect(await (await getExport(exportJsonRoute, irv.id)).text()).toContain('"IRV"');
   });
 });

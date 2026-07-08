@@ -1,49 +1,54 @@
 import { error, fail, redirect } from "@sveltejs/kit";
-import { canShowResults, closePollOrThrow, getStore, openPollOrThrow, voteInputFromRequest } from "$lib/server/app";
+import { canShowResults, closePollOrThrow, getStore, grantAdminFromUrl, isPollAdmin, openPollOrThrow, recordVote, tallyFor, voteInputFromRequest, voteTokenFor } from "$lib/server/app";
 import { isOpen } from "$lib/shared";
-import { tallyPoll } from "../../../tally";
 
-export function load({ params, url }) {
+export function load({ params, url, cookies }) {
   const poll = getStore().getPoll(Number(params.id));
   if (!poll) error(404, "Poll not found.");
+  grantAdminFromUrl(cookies, poll.id, url.searchParams.get("admin") ?? "");
+  const isAdmin = isPollAdmin(cookies, poll.id);
   const options = getStore().getOptions(poll.id);
   const votes = getStore().getVotes(poll.id);
   const viewerName = url.searchParams.get("voterName")?.trim() ?? "";
-  const viewerVote = viewerName ? getStore().getVoteByName(poll.id, viewerName) : null;
-  const tally = tallyPoll(poll, options, votes);
+  const viewerVote = viewerName ? getStore().getVoteByName(poll.id, viewerName, voteTokenFor(cookies, poll.id)) : null;
+  const showResults = canShowResults(poll, viewerVote);
   return {
     poll,
     options,
-    votes,
+    voteCount: votes.length,
     viewerName,
     viewerVote,
-    tally,
-    showResults: canShowResults(poll, viewerVote)
+    // Hidden results must not reach the client at all; the UI toggle alone
+    // would still leak them through the serialized page data.
+    tally: showResults ? tallyFor(poll, options, votes) : null,
+    showResults,
+    isAdmin,
+    adminLink: isAdmin ? `/poll/${poll.id}?admin=${encodeURIComponent(getStore().getPollAdminToken(poll.id))}` : null
   };
 }
 
 export const actions = {
-  open: async ({ params }) => {
+  open: async ({ params, cookies }) => {
     let pollId: number;
     try {
-      const poll = openPollOrThrow(Number(params.id));
+      const poll = openPollOrThrow(Number(params.id), cookies);
       pollId = poll.id;
     } catch (error) {
       return fail(400, { error: error instanceof Error ? error.message : String(error) });
     }
     redirect(303, `/poll/${pollId}`);
   },
-  close: async ({ params }) => {
+  close: async ({ params, cookies }) => {
     let pollId: number;
     try {
-      const poll = closePollOrThrow(Number(params.id));
+      const poll = closePollOrThrow(Number(params.id), cookies);
       pollId = poll.id;
     } catch (error) {
       return fail(400, { error: error instanceof Error ? error.message : String(error) });
     }
     redirect(303, `/poll/${pollId}`);
   },
-  vote: async ({ params, request }) => {
+  vote: async ({ params, request, cookies }) => {
     const poll = getStore().getPoll(Number(params.id));
     if (!poll) return fail(404, { error: "Poll not found." });
     if (!isOpen(poll)) return fail(400, { error: "Voting is not open." });
@@ -51,7 +56,7 @@ export const actions = {
     let voterName: string;
     try {
       const vote = await voteInputFromRequest(request, poll, options);
-      getStore().upsertVote(poll.id, vote.voterName, vote.ballot, vote.reason);
+      recordVote(poll, vote, cookies);
       voterName = vote.voterName;
     } catch (error) {
       return fail(400, { error: error instanceof Error ? error.message : String(error) });

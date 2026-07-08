@@ -14,11 +14,13 @@
     data: {
       poll: Poll;
       options: Option[];
-      votes: Vote[];
+      voteCount: number;
       viewerName: string;
       viewerVote: Vote | null;
-      tally: TallyResult;
+      tally: TallyResult | null;
       showResults: boolean;
+      isAdmin: boolean;
+      adminLink: string | null;
     };
     form?: { error?: string };
   } = $props();
@@ -35,7 +37,9 @@
 
 <AppPageHeader title={data.poll.title} backHref={resolve("/")} backLabel="Back to home">
   {#snippet right()}
-    {@render PollActions({ poll: data.poll })}
+    {#if data.isAdmin}
+      {@render PollActions({ poll: data.poll })}
+    {/if}
   {/snippet}
 </AppPageHeader>
 
@@ -43,7 +47,7 @@
   <p>{form.error}</p>
 {/if}
 
-<p>{template?.label ?? data.poll.type} · {statusLabel(data.poll)} · {data.votes.length} vote{data.votes.length === 1 ? "" : "s"}</p>
+<p>{template?.label ?? data.poll.type} · {statusLabel(data.poll)} · {data.voteCount} vote{data.voteCount === 1 ? "" : "s"}</p>
 
 {#if data.poll.details}
   <section>
@@ -77,7 +81,7 @@
   </section>
   <section>
     <h2>Results</h2>
-    {#if data.showResults}
+    {#if data.showResults && data.tally}
       {@render Results({ tally: data.tally, poll: data.poll })}
     {:else if data.poll.config.hideResults === "after_vote"}
       <p>Results are hidden until you vote.</p>
@@ -91,13 +95,21 @@
   </section>
 {/if}
 
-{#if isClosed(data.poll)}
+{#if isClosed(data.poll) && data.isAdmin}
   <section>
     <h2>Export</h2>
     <p>
       <a href={resolve("/poll/[id]/export.json", { id: String(data.poll.id) })}>Export JSON</a> ·
       <a href={resolve("/poll/[id]/export.csv", { id: String(data.poll.id) })}>Export CSV</a>
     </p>
+  </section>
+{/if}
+
+{#if data.adminLink}
+  <section>
+    <h2>Admin link</h2>
+    <p class="hint">Opening this link grants poll admin (open, close, edit, export) on another device. Keep it private; the plain poll URL is the one to share with voters.</p>
+    <p><a href={data.adminLink}>{data.adminLink}</a></p>
   </section>
 {/if}
 

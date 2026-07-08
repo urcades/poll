@@ -81,6 +81,7 @@ interface PollRow {
   manually_closed_at: string | null;
   opened_at: string | null;
   closed_at: string | null;
+  admin_token: string;
   created_at: string;
 }
 
@@ -98,6 +99,7 @@ interface VoteRow {
   voter_name: string;
   ballot_json: string;
   reason: string;
+  edit_token: string;
   updated_at: string;
 }
 
@@ -109,6 +111,7 @@ export interface CreatePollInput {
   opensAt: string | null;
   closesAt: string | null;
   options: Array<{ label: string; meaning: string }>;
+  adminToken?: string;
 }
 
 export interface UpdatePollInput extends CreatePollInput {
@@ -122,6 +125,10 @@ export class Store {
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
     this.db = createDatabase(path);
     this.db.run("PRAGMA foreign_keys = ON");
+    if (path !== ":memory:") {
+      this.db.run("PRAGMA journal_mode = WAL");
+      this.db.run("PRAGMA synchronous = NORMAL");
+    }
     this.migrate();
   }
 
@@ -143,6 +150,7 @@ export class Store {
         manually_closed_at TEXT,
         opened_at TEXT,
         closed_at TEXT,
+        admin_token TEXT NOT NULL DEFAULT '',
         created_at TEXT NOT NULL
       );
 
@@ -160,6 +168,7 @@ export class Store {
         voter_name TEXT NOT NULL,
         ballot_json TEXT NOT NULL,
         reason TEXT NOT NULL DEFAULT '',
+        edit_token TEXT NOT NULL DEFAULT '',
         updated_at TEXT NOT NULL,
         UNIQUE(poll_id, voter_name)
       );
@@ -169,23 +178,41 @@ export class Store {
     if (!columns.has("status")) this.db.run("ALTER TABLE polls ADD COLUMN status TEXT NOT NULL DEFAULT 'open'");
     if (!columns.has("opened_at")) this.db.run("ALTER TABLE polls ADD COLUMN opened_at TEXT");
     if (!columns.has("closed_at")) this.db.run("ALTER TABLE polls ADD COLUMN closed_at TEXT");
+    if (!columns.has("admin_token")) this.db.run("ALTER TABLE polls ADD COLUMN admin_token TEXT NOT NULL DEFAULT ''");
 
+    const voteColumns = new Set((this.db.query("PRAGMA table_info(votes)").all() as Array<{ name: string }>).map((column) => column.name));
+    if (!voteColumns.has("edit_token")) this.db.run("ALTER TABLE votes ADD COLUMN edit_token TEXT NOT NULL DEFAULT ''");
+
+    this.sweepScheduledCloses();
+    this.db.query("UPDATE polls SET opened_at = COALESCE(opened_at, created_at) WHERE status = 'open'").run();
+  }
+
+  sweepScheduledCloses() {
     const now = new Date().toISOString();
+    const due = this.db.query(`
+      SELECT EXISTS(
+        SELECT 1 FROM polls
+        WHERE status = 'open'
+          AND (manually_closed_at IS NOT NULL OR (closes_at IS NOT NULL AND closes_at <= ?))
+      ) AS due
+    `).get(now) as { due: number };
+    if (!due.due) return;
     this.db.query(`
       UPDATE polls
       SET status = 'closed',
           closed_at = COALESCE(closed_at, manually_closed_at, closes_at)
-      WHERE status != 'closed'
+      WHERE status = 'open'
         AND (manually_closed_at IS NOT NULL OR (closes_at IS NOT NULL AND closes_at <= ?))
     `).run(now);
-    this.db.query("UPDATE polls SET opened_at = COALESCE(opened_at, created_at) WHERE status = 'open'").run();
   }
 
   listPolls(): Poll[] {
+    this.sweepScheduledCloses();
     return (this.db.query("SELECT * FROM polls ORDER BY created_at DESC").all() as PollRow[]).map(mapPoll);
   }
 
   getPoll(id: number): Poll | null {
+    this.sweepScheduledCloses();
     const row = this.db.query("SELECT * FROM polls WHERE id = ?").get(id) as PollRow | null;
     return row ? mapPoll(row) : null;
   }
@@ -198,17 +225,21 @@ export class Store {
     return (this.db.query("SELECT * FROM votes WHERE poll_id = ? ORDER BY updated_at, id").all(pollId) as VoteRow[]).map(mapVote);
   }
 
-  getVoteByName(pollId: number, voterName: string): Vote | null {
+  getVoteByName(pollId: number, voterName: string, editToken = ""): Vote | null {
     const row = this.db.query("SELECT * FROM votes WHERE poll_id = ? AND voter_name = ?").get(pollId, voterName.trim()) as VoteRow | null;
-    return row ? mapVote(row) : null;
+    if (!row) return null;
+    // Votes claimed with an edit token are only visible to the holder; legacy
+    // rows without a token stay name-addressable.
+    if (row.edit_token && row.edit_token !== editToken) return null;
+    return mapVote(row);
   }
 
   createPoll(input: CreatePollInput): number {
     const now = new Date().toISOString();
     const tx = this.db.transaction(() => {
       const insert = this.db.query(`
-        INSERT INTO polls (type, title, details, config_json, status, opens_at, closes_at, manually_closed_at, opened_at, closed_at, created_at)
-        VALUES (?, ?, ?, ?, 'draft', ?, ?, NULL, NULL, NULL, ?)
+        INSERT INTO polls (type, title, details, config_json, status, opens_at, closes_at, manually_closed_at, opened_at, closed_at, admin_token, created_at)
+        VALUES (?, ?, ?, ?, 'draft', ?, ?, NULL, NULL, NULL, ?, ?)
       `);
       const result = insert.run(
         input.type,
@@ -217,6 +248,7 @@ export class Store {
         JSON.stringify(input.config),
         input.opensAt,
         input.closesAt,
+        input.adminToken ?? "",
         now
       );
       const pollId = Number(result.lastInsertRowid);
@@ -251,18 +283,30 @@ export class Store {
     return tx();
   }
 
+  // Deliberately not part of mapPoll/Poll: the poll object is serialized into
+  // client page data, and the admin token must never travel with it.
+  getPollAdminToken(pollId: number): string {
+    const row = this.db.query("SELECT admin_token FROM polls WHERE id = ?").get(pollId) as { admin_token: string } | null;
+    return row?.admin_token ?? "";
+  }
+
   openPoll(pollId: number): boolean {
     const result = this.db.query("UPDATE polls SET status = 'open', opened_at = ? WHERE id = ? AND status = 'draft'").run(new Date().toISOString(), pollId);
     return result.changes > 0;
   }
 
-  upsertVote(pollId: number, voterName: string, ballot: unknown, reason: string) {
+  upsertVote(pollId: number, voterName: string, ballot: unknown, reason: string, editToken = "") {
+    const name = voterName.trim();
+    const existing = this.db.query("SELECT edit_token FROM votes WHERE poll_id = ? AND voter_name = ?").get(pollId, name) as { edit_token: string } | null;
+    if (existing && existing.edit_token && existing.edit_token !== editToken) {
+      throw new Error("This display name has already voted from another device. Pick a different name, or vote from the original device to update the ballot.");
+    }
     this.db.query(`
-      INSERT INTO votes (poll_id, voter_name, ballot_json, reason, updated_at)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO votes (poll_id, voter_name, ballot_json, reason, edit_token, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT(poll_id, voter_name)
-      DO UPDATE SET ballot_json = excluded.ballot_json, reason = excluded.reason, updated_at = excluded.updated_at
-    `).run(pollId, voterName.trim(), JSON.stringify(ballot), reason, new Date().toISOString());
+      DO UPDATE SET ballot_json = excluded.ballot_json, reason = excluded.reason, edit_token = excluded.edit_token, updated_at = excluded.updated_at
+    `).run(pollId, name, JSON.stringify(ballot), reason, editToken, new Date().toISOString());
   }
 
   closePoll(pollId: number) {

@@ -9,9 +9,10 @@ This project started as a local exploration of Loomio-style poll creation and la
 - Draft, open, and closed poll lifecycle.
 - Draft preview and draft-only editing before voting opens.
 - SQLite persistence through `work/votes.sqlite`.
-- One active vote per display name per poll; later submissions replace earlier ones.
+- One active vote per display name per poll; the same browser can update its vote, and a per-vote edit token (held in a cookie) prevents other visitors from silently replacing it by reusing the name.
 - Result visibility controls, anonymous result/export mode, quorum fields, and optional/required/disabled vote reasons.
-- JSON and CSV exports for closed polls.
+- A per-poll admin capability: creating a poll mints an admin token (cookie plus a shareable admin link) that is required to edit drafts, open or close voting, and export results. Polls created before this feature have no token and remain open to everyone.
+- JSON and CSV exports for closed polls (admin only).
 - A SvelteKit frontend styled with `@flowercomputer/flowerparts`.
 
 ## Poll Types
@@ -106,6 +107,19 @@ https://violaceae-1.saga-owl.ts.net:10000/
 
 If adapting this for another machine, replace the hostname, Tailscale IP, certificate paths, and ports. The raw Tailscale IP is useful for binding Caddy, but the `.ts.net` hostname is the better browser URL because it matches the trusted certificate.
 
+## Deploying To Fly.io
+
+The repo ships a `Dockerfile` (Bun build stage, Node runtime) and a `fly.toml`. The app is a single stateful process with SQLite on a volume, so keep it at exactly one machine.
+
+```bash
+fly apps create poll        # or edit `app` in fly.toml first
+fly volumes create poll_data --size 1
+fly deploy
+fly scale count 1
+```
+
+The database lives at `/data/votes.sqlite` on the volume. Take volume snapshots (or add Litestream) if losing poll history would hurt. `auto_stop_machines` is enabled; cold starts are a few seconds and the data survives them.
+
 ## Useful Commands
 
 Run type and Svelte checks:
@@ -134,9 +148,11 @@ bun run preview
 
 ## Data And Privacy Notes
 
-Runtime data is stored locally in `work/votes.sqlite`, which is ignored by Git. The app does not implement authentication, ownership, email delivery, reminders, or per-voter administration. It assumes a lightweight trust model where the link is shared with friends or collaborators.
+Runtime data is stored locally in `work/votes.sqlite`, which is ignored by Git. The app does not implement accounts, email delivery, reminders, or per-voter administration. It assumes a lightweight trust model where the link is shared with friends or collaborators; capability tokens (a vote edit token per ballot, an admin token per poll) provide just enough ownership without any sign-in.
 
-Anonymous voting mode hides voter names and reasons in results and exports, but display names are still stored internally so repeat submissions can replace earlier votes.
+Hidden results (before vote or before close) are enforced server-side: the tally and voter data are excluded from the page payload entirely, not just hidden in the UI.
+
+Anonymous voting mode hides voter names and reasons in results and exports, but display names are still stored internally so a voter can update their own ballot. Anonymous exports are re-ordered and omit timestamps so they do not reveal submission order.
 
 ## Repository Shape
 
