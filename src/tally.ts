@@ -407,7 +407,7 @@ function tallyIrv(options: Option[], votes: Vote[]) {
   let exhaustedVotes = 0;
   let round = 1;
 
-  while (running.size > 0 && round < 100) {
+  while (running.size > 0 && round <= options.length + 1) {
     const tallies = Object.fromEntries(options.map((option) => [option.id, 0]));
     exhaustedVotes = 0;
     for (const ballot of ballots) {
@@ -503,31 +503,47 @@ function tallyScottishStv(poll: Poll, options: Option[], votes: Vote[], seats: n
   for (const ballot of ballots) ballot.owner = nextAvailable(ballot, running);
 
   let round = 1;
-  while (elected.size < seats && running.size > 0 && round < 100) {
+  while (elected.size < seats && running.size > 0 && round <= options.length + 1) {
     const tallies = recordTallies(options, ballots, fixedTotals);
     logs.push({ round, action: "count", tallies, note: `Quota ${formatNumber(quota)}` });
     const winners = [...running].filter((id) => (tallies[id] ?? 0) + EPSILON >= quota);
 
     if (winners.length > 0) {
-      const winner = tieBreakHighest(winners, logs, order);
-      const total = tallies[winner] ?? 0;
-      const surplus = Math.max(0, total - quota);
-      elected.set(winner, { round, finalTally: total, surplus });
-      running.delete(winner);
-      fixedTotals.set(winner, Math.min(total, quota || total));
-      const transferRatio = total > 0 ? surplus / total : 0;
-      for (const ballot of ballots) {
-        if (ballot.owner === winner) {
-          ballot.weight *= transferRatio;
-          ballot.owner = transferRatio > EPSILON ? nextAvailable(ballot, running) : null;
-        }
+      // All candidates at or above quota in this stage are deemed elected together.
+      // Elected candidates leave `running` immediately, so no surplus can flow to them.
+      const seatsLeft = seats - elected.size;
+      let stage = [...winners].sort((a, b) => (tallies[b] ?? 0) - (tallies[a] ?? 0) || (order.get(a) ?? 0) - (order.get(b) ?? 0));
+      if (stage.length > seatsLeft) stage = stage.slice(0, seatsLeft);
+      const stageTotals = new Map(stage.map((id) => [id, tallies[id] ?? 0]));
+      for (const id of stage) {
+        running.delete(id);
+        elected.set(id, { round, finalTally: stageTotals.get(id) ?? 0, surplus: Math.max(0, (stageTotals.get(id) ?? 0) - quota) });
       }
-      logs.push({
-        round,
-        action: `elect ${labelFor(options, winner)}`,
-        tallies: recordTallies(options, ballots, fixedTotals),
-        note: `Surplus ${formatNumber(surplus)} transferred at ${formatNumber(transferRatio)}`
-      });
+
+      // Transfer surpluses one at a time, largest first.
+      const pending = new Set(stage);
+      while (pending.size > 0) {
+        const top = Math.max(...[...pending].map((id) => stageTotals.get(id) ?? 0));
+        const tied = [...pending].filter((id) => Math.abs((stageTotals.get(id) ?? 0) - top) < EPSILON);
+        const winner = tieBreakHighest(tied, logs, order);
+        pending.delete(winner);
+        const total = stageTotals.get(winner) ?? 0;
+        const surplus = Math.max(0, total - quota);
+        fixedTotals.set(winner, Math.min(total, quota || total));
+        const transferRatio = total > 0 ? surplus / total : 0;
+        for (const ballot of ballots) {
+          if (ballot.owner === winner) {
+            ballot.weight *= transferRatio;
+            ballot.owner = transferRatio > EPSILON ? nextAvailable(ballot, running) : null;
+          }
+        }
+        logs.push({
+          round,
+          action: `elect ${labelFor(options, winner)}`,
+          tallies: recordTallies(options, ballots, fixedTotals),
+          note: `Surplus ${formatNumber(surplus)} transferred at ${formatNumber(transferRatio)}`
+        });
+      }
     } else {
       const talliedRunning = [...running].map((id) => ({ id, tally: tallies[id] ?? 0 }));
       const low = Math.min(...talliedRunning.map((entry) => entry.tally));
@@ -561,7 +577,7 @@ function tallyScottishStv(poll: Poll, options: Option[], votes: Vote[], seats: n
     return {
       ...rowFor(option),
       firstPreferences: firstPrefs.get(option.id) ?? 0,
-      finalTally: finalTallies[option.id] ?? fixedTotals.get(option.id) ?? 0,
+      finalTally: fixedTotals.get(option.id) ?? finalTallies[option.id] ?? 0,
       electedRound: electedInfo?.round,
       surplus: electedInfo?.surplus,
       status: electedInfo ? "elected" : "not elected"
@@ -618,7 +634,7 @@ function tallyMeekStv(poll: Poll, options: Option[], votes: Vote[], seats: numbe
   const logs: RoundLog[] = [];
   let round = 1;
 
-  while (elected.size < seats && hopeful.size > 0 && round < 100) {
+  while (elected.size < seats && hopeful.size > 0 && round <= options.length + 1) {
     let totals = meekTotals(ballots, options, hopeful, elected, keepFactors);
     let changed = false;
 
@@ -655,7 +671,7 @@ function tallyMeekStv(poll: Poll, options: Option[], votes: Vote[], seats: numbe
         electedInfo.set(id, { round, finalTally: totals.get(id) ?? 0, surplus: Math.max(0, (totals.get(id) ?? 0) - quota) });
       }
     }
-    logs.push({ round, action: changed ? "elect by Meek quota" : "Meek count", tallies: tallyRecord, note: keepFactorNote(keepFactors, elected) });
+    logs.push({ round, action: changed ? "elect by Meek quota" : "Meek count", tallies: tallyRecord, note: keepFactorNote(options, keepFactors, elected) });
 
     if (elected.size >= seats) break;
     if (elected.size + hopeful.size <= seats) {
@@ -704,8 +720,8 @@ function labelFor(options: Option[], id: number): string {
   return options.find((option) => option.id === id)?.label ?? `Option ${id}`;
 }
 
-function keepFactorNote(keepFactors: Map<number, number>, elected: Set<number>): string {
-  const parts = [...elected].map((id) => `${id}:${formatNumber(keepFactors.get(id) ?? 1)}`);
+function keepFactorNote(options: Option[], keepFactors: Map<number, number>, elected: Set<number>): string {
+  const parts = [...elected].map((id) => `${labelFor(options, id)}:${formatNumber(keepFactors.get(id) ?? 1)}`);
   return parts.length ? `Keep factors ${parts.join(", ")}` : "No keep factors yet";
 }
 
