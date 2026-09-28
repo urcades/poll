@@ -16,6 +16,13 @@ body {
   --app-time-color: light-dark(#3b7f58, #8fd6ad);
 }
 
+/* Keep the whole interface (header included) in a readable centered column
+   on large screens; below the max width this is a no-op. */
+body > div {
+  max-width: var(--app-content-max-width, 36rem);
+  margin-inline: auto;
+}
+
 body > div > :not(.page-header) {
   box-sizing: border-box;
   width: 100%;

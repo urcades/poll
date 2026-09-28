@@ -297,16 +297,24 @@ export class Store {
 
   upsertVote(pollId: number, voterName: string, ballot: unknown, reason: string, editToken = "") {
     const name = voterName.trim();
-    const existing = this.db.query("SELECT edit_token FROM votes WHERE poll_id = ? AND voter_name = ?").get(pollId, name) as { edit_token: string } | null;
-    if (existing && existing.edit_token && existing.edit_token !== editToken) {
-      throw new Error("This display name has already voted from another device. Pick a different name, or vote from the original device to update the ballot.");
-    }
-    this.db.query(`
-      INSERT INTO votes (poll_id, voter_name, ballot_json, reason, edit_token, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-      ON CONFLICT(poll_id, voter_name)
-      DO UPDATE SET ballot_json = excluded.ballot_json, reason = excluded.reason, edit_token = excluded.edit_token, updated_at = excluded.updated_at
-    `).run(pollId, name, JSON.stringify(ballot), reason, editToken, new Date().toISOString());
+    const tx = this.db.transaction(() => {
+      const existing = this.db.query("SELECT edit_token FROM votes WHERE poll_id = ? AND voter_name = ?").get(pollId, name) as { edit_token: string } | null;
+      if (existing && existing.edit_token && existing.edit_token !== editToken) {
+        throw new Error("This display name has already voted from another device. Pick a different name, or vote from the original device to update the ballot.");
+      }
+      this.db.query(`
+        INSERT INTO votes (poll_id, voter_name, ballot_json, reason, edit_token, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(poll_id, voter_name)
+        DO UPDATE SET ballot_json = excluded.ballot_json, reason = excluded.reason, edit_token = excluded.edit_token, updated_at = excluded.updated_at
+      `).run(pollId, name, JSON.stringify(ballot), reason, editToken, new Date().toISOString());
+    });
+    tx();
+  }
+
+  deletePoll(pollId: number): boolean {
+    const result = this.db.query("DELETE FROM polls WHERE id = ?").run(pollId);
+    return result.changes > 0;
   }
 
   closePoll(pollId: number) {

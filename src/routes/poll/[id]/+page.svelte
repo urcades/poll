@@ -1,5 +1,6 @@
 <script lang="ts">
   import { resolve } from "$app/paths";
+  import { invalidateAll } from "$app/navigation";
   import { Button, Table, tableColumn, tableColumns } from "@flowercomputer/flowerparts";
   import AppPageHeader from "$lib/AppPageHeader.svelte";
   import { formatNumber } from "../../../tally";
@@ -26,6 +27,17 @@
   } = $props();
 
   const template = $derived(templateByType.get(data.poll.type));
+
+  // Keep vote counts and results fresh for everyone with the page open.
+  $effect(() => {
+    if (!isOpen(data.poll)) return;
+    const timer = setInterval(() => invalidateAll(), 5000);
+    return () => clearInterval(timer);
+  });
+
+  function confirmDelete(event: SubmitEvent) {
+    if (!confirm("Delete this poll and all of its votes? This cannot be undone.")) event.preventDefault();
+  }
   function ballotObject(value: unknown): Record<string, unknown> {
     return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
   }
@@ -114,14 +126,15 @@
 {/if}
 
 {#snippet PollActions({ poll }: { poll: Poll })}
-  {#if poll.status === "draft"}
-    <div class="actions">
+  <div class="actions">
+    {#if poll.status === "draft"}
       <Button href={resolve("/poll/[id]/edit", { id: String(poll.id) })} variant="secondary">Edit draft</Button>
       <form method="post" action="?/open"><Button type="submit" variant="primary">Open voting</Button></form>
-    </div>
-  {:else if !isClosed(poll)}
-    <form method="post" action="?/close"><Button type="submit" variant="secondary">Close poll</Button></form>
-  {/if}
+    {:else if !isClosed(poll)}
+      <form method="post" action="?/close"><Button type="submit" variant="secondary">Close poll</Button></form>
+    {/if}
+    <form method="post" action="?/delete" onsubmit={confirmDelete}><Button type="submit" variant="secondary">Delete</Button></form>
+  </div>
 {/snippet}
 
 {#snippet VoteForm({ poll, options, viewerName, viewerVote }: { poll: Poll; options: Option[]; viewerName: string; viewerVote: Vote | null })}

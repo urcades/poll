@@ -1,5 +1,5 @@
 import { error, fail, redirect } from "@sveltejs/kit";
-import { canShowResults, closePollOrThrow, getStore, grantAdminFromUrl, isPollAdmin, openPollOrThrow, recordVote, tallyFor, voteInputFromRequest, voteTokenFor } from "$lib/server/app";
+import { canShowResults, closePollOrThrow, deletePollOrThrow, getStore, grantAdminFromUrl, isPollAdmin, openPollOrThrow, recordVote, tallyFor, voteInputFromRequest, voteTokenFor, voterNameFor } from "$lib/server/app";
 import { isOpen } from "$lib/shared";
 
 export function load({ params, url, cookies }) {
@@ -9,7 +9,7 @@ export function load({ params, url, cookies }) {
   const isAdmin = isPollAdmin(cookies, poll.id);
   const options = getStore().getOptions(poll.id);
   const votes = getStore().getVotes(poll.id);
-  const viewerName = url.searchParams.get("voterName")?.trim() ?? "";
+  const viewerName = url.searchParams.get("voterName")?.trim() || voterNameFor(cookies, poll.id);
   const viewerVote = viewerName ? getStore().getVoteByName(poll.id, viewerName, voteTokenFor(cookies, poll.id)) : null;
   const showResults = canShowResults(poll, viewerVote);
   return {
@@ -48,19 +48,26 @@ export const actions = {
     }
     redirect(303, `/poll/${pollId}`);
   },
+  delete: async ({ params, cookies }) => {
+    try {
+      deletePollOrThrow(Number(params.id), cookies);
+    } catch (error) {
+      return fail(400, { error: error instanceof Error ? error.message : String(error) });
+    }
+    redirect(303, "/");
+  },
   vote: async ({ params, request, cookies }) => {
     const poll = getStore().getPoll(Number(params.id));
     if (!poll) return fail(404, { error: "Poll not found." });
     if (!isOpen(poll)) return fail(400, { error: "Voting is not open." });
     const options = getStore().getOptions(poll.id);
-    let voterName: string;
     try {
       const vote = await voteInputFromRequest(request, poll, options);
       recordVote(poll, vote, cookies);
-      voterName = vote.voterName;
     } catch (error) {
       return fail(400, { error: error instanceof Error ? error.message : String(error) });
     }
-    redirect(303, `/poll/${poll.id}?voterName=${encodeURIComponent(voterName)}`);
+    // The viewer's name travels in a cookie (set by recordVote), not the URL.
+    redirect(303, `/poll/${poll.id}`);
   }
 };

@@ -132,6 +132,19 @@ export function voteTokenCookie(pollId: number): string {
   return `poll_${pollId}_vote_token`;
 }
 
+export function voterNameCookie(pollId: number): string {
+  return `poll_${pollId}_voter_name`;
+}
+
+export function voterNameFor(cookies: Cookies, pollId: number): string {
+  const raw = cookies.get(voterNameCookie(pollId)) ?? "";
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return "";
+  }
+}
+
 export function voteTokenFor(cookies: Cookies, pollId: number): string {
   return cookies.get(voteTokenCookie(pollId)) ?? "";
 }
@@ -144,6 +157,9 @@ export function recordVote(poll: Poll, vote: { voterName: string; reason: string
   const token = voteTokenFor(cookies, poll.id) || crypto.randomUUID();
   getStore().upsertVote(poll.id, vote.voterName, vote.ballot, vote.reason, token);
   cookies.set(voteTokenCookie(poll.id), token, TOKEN_COOKIE_OPTIONS);
+  // Remember the name in a cookie so the post-vote redirect can stay clean of
+  // `?voterName=` (names in URLs end up in history and logs).
+  cookies.set(voterNameCookie(poll.id), encodeURIComponent(vote.voterName), TOKEN_COOKIE_OPTIONS);
 }
 
 export function openPollOrThrow(pollId: number, cookies: Cookies) {
@@ -162,6 +178,16 @@ export function closePollOrThrow(pollId: number, cookies: Cookies) {
   requirePollAdmin(cookies, poll.id);
   if (poll.status === "draft") throw new Error("Open the draft before closing it.");
   db.closePoll(poll.id);
+  return poll;
+}
+
+export function deletePollOrThrow(pollId: number, cookies: Cookies) {
+  const db = getStore();
+  const poll = db.getPoll(pollId);
+  if (!poll) throw new Error("Poll not found.");
+  requirePollAdmin(cookies, poll.id);
+  db.deletePoll(poll.id);
+  closedTallyCache.delete(poll.id);
   return poll;
 }
 
@@ -372,5 +398,8 @@ function arrayField(value: unknown): unknown[] {
 
 function dateField(value: unknown): string | null {
   const raw = stringField(value);
-  return raw ? new Date(raw).toISOString() : null;
+  if (!raw) return null;
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) throw new Error("Invalid date.");
+  return date.toISOString();
 }

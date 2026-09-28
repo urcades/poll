@@ -10,7 +10,7 @@ import { POST as voteRoute } from "../src/routes/api/polls/[id]/votes/+server";
 import { GET as exportCsvRoute } from "../src/routes/poll/[id]/export.csv/+server";
 import { GET as exportJsonRoute } from "../src/routes/poll/[id]/export.json/+server";
 import { load as pollLoad } from "../src/routes/poll/[id]/+page.server";
-import { resetStoreForTesting } from "../src/lib/server/app";
+import { deletePollOrThrow, resetStoreForTesting } from "../src/lib/server/app";
 import { templates } from "../src/templates";
 import type { Store } from "../src/db";
 
@@ -267,11 +267,17 @@ describe("SvelteKit app integration", () => {
     const options = db.getOptions(id);
     await postJson(voteRoute, { id: String(id) }, { voterName: "Ada", selected: [String(options[0]!.id)], reason: "Secret" });
 
-    const page = await loadPoll(id);
+    // A different browser sees no voter data; the voter sees only their own vote.
+    const stranger = cookieJar();
+    const page = await loadPoll(id, "", stranger);
     expect(page.showResults).toBe(false);
     expect(page.tally).toBeNull();
     expect(page.voteCount).toBe(1);
     expect(JSON.stringify(page)).not.toContain("Secret");
+
+    const ownPage = await loadPoll(id);
+    expect(ownPage.viewerVote?.reason).toBe("Secret");
+    expect(ownPage.tally).toBeNull();
 
     await closePoll(id);
     const closedPage = await loadPoll(id);
@@ -403,6 +409,35 @@ describe("SvelteKit app integration", () => {
     const poll = db.getPoll(id);
     expect(poll?.status).toBe("closed");
     expect(poll?.closedAt).toBeTruthy();
+  });
+
+  test("rejects invalid open/close dates instead of crashing", async () => {
+    storeFixture();
+    const response = await postJson(createPollRoute, {}, {
+      type: "choose",
+      title: "Bad date",
+      optionsText: "A\nB",
+      closesAt: "not-a-date"
+    });
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as { error: string }).error).toContain("Invalid date");
+  });
+
+  test("only the admin can delete a poll, and deletion cascades", async () => {
+    const db = storeFixture();
+    const { id } = await createPoll();
+    await openPoll(id);
+    const options = db.getOptions(id);
+    await postJson(voteRoute, { id: String(id) }, { voterName: "Ada", selected: [String(options[0]!.id)] });
+
+    const stranger = cookieJar();
+    expect(() => deletePollOrThrow(id, stranger as never)).toThrow("Only the poll admin");
+    expect(db.getPoll(id)).not.toBeNull();
+
+    deletePollOrThrow(id, cookies as never);
+    expect(db.getPoll(id)).toBeNull();
+    expect(db.getOptions(id)).toEqual([]);
+    expect(db.getVotes(id)).toEqual([]);
   });
 
   test("approval and IRV can be opened, voted, closed, and exported", async () => {
