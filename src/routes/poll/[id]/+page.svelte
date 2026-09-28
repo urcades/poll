@@ -96,11 +96,7 @@
     {#if data.showResults && data.tally}
       {@render Results({ tally: data.tally, poll: data.poll })}
     {:else if data.poll.config.hideResults === "after_vote"}
-      <p>Results are hidden until you vote.</p>
-      <form method="get" action={resolve("/poll/[id]", { id: String(data.poll.id) })}>
-        <label>Already voted? Enter your display name <input name="voterName" value={data.viewerName} /></label>
-        <Button type="submit">Reveal if voted</Button>
-      </form>
+      <p>Results are hidden until you vote. They appear here once this browser has voted.</p>
     {:else}
       <p>Results are hidden until this poll closes.</p>
     {/if}

@@ -98,21 +98,47 @@ export function adminTokenCookie(pollId: number): string {
   return `poll_${pollId}_admin_token`;
 }
 
+export const OPERATOR_COOKIE = "poll_operator_token";
+
+function operatorToken(): string {
+  return process.env.OPERATOR_TOKEN ?? "";
+}
+
 /**
- * Polls created before admin tokens existed have an empty token and stay
- * open to everyone; new polls are managed only by the token holder. A valid
+ * The instance operator (holder of the OPERATOR_TOKEN env secret) is admin of
+ * every poll. This is the only way to manage legacy polls, created before
+ * per-poll admin tokens existed, and to moderate spam.
+ */
+export function isOperator(cookies: Cookies, urlToken = ""): boolean {
+  const token = operatorToken();
+  if (!token) return false;
+  return cookies.get(OPERATOR_COOKIE) === token || urlToken === token;
+}
+
+/**
+ * New polls are managed only by the admin token holder (or the operator).
+ * Legacy polls with an empty token are managed only by the operator. A valid
  * `?admin=<token>` URL grants the cookie, so the admin link is shareable.
  */
 export function isPollAdmin(cookies: Cookies, pollId: number, urlToken = ""): boolean {
+  if (isOperator(cookies, urlToken)) return true;
   const token = getStore().getPollAdminToken(pollId);
-  if (!token) return true;
+  if (!token) return false;
   return cookies.get(adminTokenCookie(pollId)) === token || urlToken === token;
 }
 
-export function grantAdminFromUrl(cookies: Cookies, pollId: number, urlToken: string) {
-  if (urlToken && urlToken === getStore().getPollAdminToken(pollId)) {
-    cookies.set(adminTokenCookie(pollId), urlToken, TOKEN_COOKIE_OPTIONS);
+/** Exchanges a `?admin=` URL token for a cookie; returns true if one was granted. */
+export function grantAdminFromUrl(cookies: Cookies, pollId: number, urlToken: string): boolean {
+  if (!urlToken) return false;
+  if (urlToken === operatorToken()) {
+    cookies.set(OPERATOR_COOKIE, urlToken, TOKEN_COOKIE_OPTIONS);
+    return true;
   }
+  if (urlToken === getStore().getPollAdminToken(pollId)) {
+    cookies.set(adminTokenCookie(pollId), urlToken, TOKEN_COOKIE_OPTIONS);
+    return true;
+  }
+  return false;
 }
 
 export function createPollWithAdmin(input: CreatePollInput, cookies: Cookies): { id: number; adminToken: string } {

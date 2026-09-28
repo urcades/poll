@@ -91,10 +91,10 @@ async function getExport(handler: Function, id: number, jar: CookieJar = cookies
   } as never);
 }
 
-async function loadPoll(id: number, voterName = "", jar: CookieJar = cookies) {
+async function loadPoll(id: number, jar: CookieJar = cookies, search = "") {
   return await pollLoad({
     params: { id: String(id) },
-    url: new URL(`http://local.test/poll/${id}${voterName ? `?voterName=${encodeURIComponent(voterName)}` : ""}`),
+    url: new URL(`http://local.test/poll/${id}${search}`),
     cookies: jar
   } as never);
 }
@@ -212,11 +212,11 @@ describe("SvelteKit app integration", () => {
 
     const options = db.getOptions(id);
     await postJson(voteRoute, { id: String(id) }, { voterName: "Ada", selected: [String(options[0]!.id)] });
-    expect((await loadPoll(id, "Ada")).showResults).toBe(true);
+    expect((await loadPoll(id)).showResults).toBe(true);
 
     // Someone who merely guesses a voter's name (no edit-token cookie) gets nothing.
     const stranger = cookieJar();
-    expect((await loadPoll(id, "Ada", stranger)).showResults).toBe(false);
+    expect((await loadPoll(id, stranger)).showResults).toBe(false);
 
     const closedHidden = await createPoll({ title: "Closed hidden", hideResults: "after_close" });
     await openPoll(closedHidden.id);
@@ -254,7 +254,7 @@ describe("SvelteKit app integration", () => {
     expect((await getExport(exportJsonRoute, id, cookieJar(), token)).status).toBe(200);
 
     // Non-admin page loads hide the admin controls and link.
-    const page = await loadPoll(id, "", stranger);
+    const page = await loadPoll(id, stranger);
     expect(page.isAdmin).toBe(false);
     expect(page.adminLink).toBeNull();
     expect(JSON.stringify(page)).not.toContain(token);
@@ -269,7 +269,7 @@ describe("SvelteKit app integration", () => {
 
     // A different browser sees no voter data; the voter sees only their own vote.
     const stranger = cookieJar();
-    const page = await loadPoll(id, "", stranger);
+    const page = await loadPoll(id, stranger);
     expect(page.showResults).toBe(false);
     expect(page.tally).toBeNull();
     expect(page.voteCount).toBe(1);
@@ -409,6 +409,50 @@ describe("SvelteKit app integration", () => {
     const poll = db.getPoll(id);
     expect(poll?.status).toBe("closed");
     expect(poll?.closedAt).toBeTruthy();
+  });
+
+  test("admin links grant a cookie and then redirect to the clean poll URL", async () => {
+    const db = storeFixture();
+    const { id } = await createPoll();
+    const token = db.getPollAdminToken(id);
+    const device = cookieJar();
+
+    let thrown: unknown;
+    try {
+      await loadPoll(id, device, `?admin=${encodeURIComponent(token)}`);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toMatchObject({ status: 303, location: `/poll/${id}` });
+    expect((await loadPoll(id, device)).isAdmin).toBe(true);
+
+    // A bad token still strips the query string but grants nothing.
+    const guesser = cookieJar();
+    await expect(loadPoll(id, guesser, "?admin=nope")).rejects.toMatchObject({ status: 303 });
+    expect((await loadPoll(id, guesser)).isAdmin).toBe(false);
+  });
+
+  test("legacy polls without an admin token are managed only by the operator", async () => {
+    const db = storeFixture();
+    const { id } = await createPoll();
+    db.db.query("UPDATE polls SET admin_token = '' WHERE id = ?").run(id);
+
+    const stranger = cookieJar();
+    expect(() => deletePollOrThrow(id, stranger as never)).toThrow("Only the poll admin");
+    expect((await loadPoll(id, stranger)).isAdmin).toBe(false);
+
+    const previous = process.env.OPERATOR_TOKEN;
+    process.env.OPERATOR_TOKEN = "operator-secret";
+    try {
+      const operator = cookieJar();
+      await expect(loadPoll(id, operator, "?admin=operator-secret")).rejects.toMatchObject({ status: 303 });
+      expect((await loadPoll(id, operator)).isAdmin).toBe(true);
+      deletePollOrThrow(id, operator as never);
+      expect(db.getPoll(id)).toBeNull();
+    } finally {
+      if (previous === undefined) delete process.env.OPERATOR_TOKEN;
+      else process.env.OPERATOR_TOKEN = previous;
+    }
   });
 
   test("rejects invalid open/close dates instead of crashing", async () => {

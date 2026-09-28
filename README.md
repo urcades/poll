@@ -11,7 +11,8 @@ This project started as a local exploration of Loomio-style poll creation and la
 - SQLite persistence through `work/votes.sqlite`.
 - One active vote per display name per poll; the same browser can update its vote, and a per-vote edit token (held in a cookie) prevents other visitors from silently replacing it by reusing the name.
 - Result visibility controls, anonymous result/export mode, quorum fields, and optional/required/disabled vote reasons.
-- A per-poll admin capability: creating a poll mints an admin token (cookie plus a shareable admin link) that is required to edit drafts, open or close voting, and export results. Polls created before this feature have no token and remain open to everyone.
+- A per-poll admin capability: creating a poll mints an admin token (cookie plus a shareable admin link) that is required to edit drafts, open, close, or delete the poll, and export results. Opening the admin link swaps the token for a cookie and redirects to the plain poll URL.
+- An optional instance operator secret (`OPERATOR_TOKEN` env var). Visiting any poll with `?admin=<OPERATOR_TOKEN>` makes that browser admin of every poll, which is the only way to manage legacy polls created before admin tokens existed and a way to remove spam.
 - JSON and CSV exports for closed polls (admin only).
 - A SvelteKit frontend styled with `@flowercomputer/flowerparts`.
 

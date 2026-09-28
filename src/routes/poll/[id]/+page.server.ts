@@ -5,11 +5,16 @@ import { isOpen } from "$lib/shared";
 export function load({ params, url, cookies }) {
   const poll = getStore().getPoll(Number(params.id));
   if (!poll) error(404, "Poll not found.");
-  grantAdminFromUrl(cookies, poll.id, url.searchParams.get("admin") ?? "");
+  if (url.searchParams.has("admin")) {
+    // Swap the token for a cookie, then drop it from the address bar so it
+    // does not linger in history or get copied along with the voter link.
+    grantAdminFromUrl(cookies, poll.id, url.searchParams.get("admin") ?? "");
+    redirect(303, `/poll/${poll.id}`);
+  }
   const isAdmin = isPollAdmin(cookies, poll.id);
   const options = getStore().getOptions(poll.id);
   const votes = getStore().getVotes(poll.id);
-  const viewerName = url.searchParams.get("voterName")?.trim() || voterNameFor(cookies, poll.id);
+  const viewerName = voterNameFor(cookies, poll.id);
   const viewerVote = viewerName ? getStore().getVoteByName(poll.id, viewerName, voteTokenFor(cookies, poll.id)) : null;
   const showResults = canShowResults(poll, viewerVote);
   return {
