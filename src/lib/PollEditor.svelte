@@ -4,9 +4,15 @@
   import { pendingForm } from "$lib/enhance.svelte";
   import { defaultOptionsText, templates } from "../templates";
   import { isProposalType, type PollConfig, type PollType } from "../types";
-  import { untrack } from "svelte";
+  import { onMount, untrack } from "svelte";
+  import { parseSlot } from "$lib/shared";
 
-  type OptionItem = { label: string; meaning: string };
+  /**
+   * `uid` keys the row so it keeps focus while typing. For time polls `label`
+   * is the ISO UTC instant and `local` is what the datetime-local input shows.
+   */
+  type OptionItem = { uid: number; label: string; meaning: string; local: string };
+  let nextUid = 0;
 
   const templateGroups = [
     { label: "Proposal templates", category: "proposal" },
@@ -34,9 +40,12 @@
     action = "",
     selected,
     values,
-    submitLabel
+    submitLabel,
+    freshDefaults = false
   }: {
     action?: string;
+    /** New polls only: example timeslots are regenerated in the browser's own time zone. */
+    freshDefaults?: boolean;
     selected: PollType;
     values: {
       title: string;
@@ -56,6 +65,8 @@
   let selectedType = $state.raw(initial.selected);
   let lastType = $state.raw(initial.selected);
   let optionItems = $state.raw(parseOptionsText(initial.values.optionsText));
+  const initialSerialized = serializeOptions(parseOptionsText(initial.values.optionsText));
+  let mounted = $state(false);
   let draggedIndex = $state<number | null>(null);
 
   let minChoices = $state(initial.values.config.minChoices ?? 1);
@@ -86,10 +97,42 @@
       .filter(Boolean)
       .map((line) => {
         const parts = line.split("|");
-        return { label: (parts.shift() ?? "").trim(), meaning: parts.join("|").trim() };
+        return { uid: nextUid++, label: (parts.shift() ?? "").trim(), meaning: parts.join("|").trim(), local: "" };
       })
       .filter((option) => option.label);
   }
+
+  /** ISO instant (or a legacy `YYYY-MM-DD HH:MM`, taken as local) -> datetime-local value in the browser's zone; "" if it is neither. */
+  function toLocalInput(label: string): string {
+    const legacy = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})(?::\d{2})?$/.exec(label);
+    if (legacy) return `${legacy[1]}T${legacy[2]}`;
+    const date = parseSlot(label);
+    return date ? localDateTimeValue(date) : "";
+  }
+
+  /** datetime-local value in the browser's zone -> ISO UTC; "" while incomplete. */
+  function toIso(local: string): string {
+    const date = new Date(local);
+    return local && !Number.isNaN(date.getTime()) ? date.toISOString() : "";
+  }
+
+  /** Fills each row's local input from its label. Browser only: the server does not know the viewer's zone. */
+  function withLocalInputs(items: OptionItem[]): OptionItem[] {
+    if (selectedType !== "time_poll") return items;
+    return items.map((item) => {
+      const local = toLocalInput(item.label);
+      return { ...item, local, label: local ? toIso(local) : item.label };
+    });
+  }
+
+  onMount(() => {
+    mounted = true;
+    if (freshDefaults && selectedType === "time_poll" && serializeOptions(optionItems) === initialSerialized) {
+      optionItems = withLocalInputs(parseOptionsText(defaultOptionsText("time_poll")));
+    } else {
+      optionItems = withLocalInputs(optionItems);
+    }
+  });
 
   function serializeOptions(options: OptionItem[]): string {
     return options
@@ -100,7 +143,7 @@
 
   function syncType() {
     if (selectedType !== lastType && (!serializedOptions.trim() || serializedOptions === defaultOptionsText(lastType))) {
-      optionItems = parseOptionsText(defaultOptionsText(selectedType));
+      optionItems = withLocalInputs(parseOptionsText(defaultOptionsText(selectedType)));
     }
     lastType = selectedType;
   }
@@ -120,8 +163,18 @@
   }
 
   function addOption() {
-    const label = selectedType === "time_poll" ? "New timeslot" : selectedType === "irv" || selectedType === "stv" ? "New candidate" : "New option";
-    optionItems = [...optionItems, { label, meaning: "" }];
+    if (selectedType === "time_poll") {
+      // The day after the last slot, same time.
+      const last = optionItems.at(-1)?.local;
+      const base = last ? new Date(last) : new Date();
+      if (!last) base.setHours(10, 0, 0, 0);
+      base.setDate(base.getDate() + 1);
+      const local = localDateTimeValue(base);
+      optionItems = [...optionItems, { uid: nextUid++, label: toIso(local), meaning: "", local }];
+      return;
+    }
+    const label = selectedType === "irv" || selectedType === "stv" ? "New candidate" : "New option";
+    optionItems = [...optionItems, { uid: nextUid++, label, meaning: "", local: "" }];
   }
 
   function updateOption(index: number, patch: Partial<OptionItem>) {
@@ -150,6 +203,7 @@
   function getOptionsHint(): string {
     if (fixed) return "This proposal type has fixed voting positions because its outcome logic depends on them.";
     if (selectedType === "rank") return `One per line. Ranked choices cannot exceed the ${optionCount} available option${optionCount === 1 ? "" : "s"}.`;
+    if (selectedType === "time_poll") return "Pick a date and time for each slot in your own time zone. Slots are stored in UTC and shown to each voter in theirs.";
     if (selectedType === "irv") return "One candidate per line. IRV needs at least 2 candidates.";
     if (selectedType === "stv") return `One candidate per line. Seats must be less than the ${optionCount} candidate${optionCount === 1 ? "" : "s"}.`;
     return 'One per line. Use "Name | meaning" for optional meaning text.';
@@ -253,7 +307,7 @@
       {/if}
     </div>
     <div id="option-blocks" class="option-blocks">
-      {#each optionItems as option, index (`${index}-${option.label}`)}
+      {#each optionItems as option, index (option.uid)}
         <article
           class={`option-block option-block-${selectedType}`}
           draggable={!fixed}
@@ -278,12 +332,22 @@
         >
           <Button type="button" disabled={fixed}>grab</Button>
           <div class="option-fields">
+            {#if selectedType === "time_poll"}
+              <label>
+                Date and time{mounted ? " (your local time)" : " (UTC)"}
+                <input type="datetime-local" required value={option.local || (mounted ? "" : option.label.slice(0, 16))} oninput={(event) => updateOption(index, { local: event.currentTarget.value, label: toIso(event.currentTarget.value) })} />
+              </label>
+              {#if mounted && option.label && !option.local}
+                <p class="field-help">"{option.label}" is not a date. Pick a date and time to replace it.</p>
+              {/if}
+            {:else}
+              <label>
+                {selectedType === "irv" || selectedType === "stv" ? "Candidate" : "Label"}
+                <input value={option.label} required readonly={fixed} oninput={(event) => updateOption(index, { label: event.currentTarget.value })} />
+              </label>
+            {/if}
             <label>
-              {selectedType === "time_poll" ? "Timeslot" : selectedType === "irv" || selectedType === "stv" ? "Candidate" : "Label"}
-              <input value={option.label} required readonly={fixed} oninput={(event) => updateOption(index, { label: event.currentTarget.value })} />
-            </label>
-            <label>
-              Meaning
+              {selectedType === "time_poll" ? "Note" : "Meaning"}
               <input value={option.meaning} placeholder={fixed ? "" : "Optional"} readonly={fixed} oninput={(event) => updateOption(index, { meaning: event.currentTarget.value })} />
             </label>
           </div>

@@ -353,12 +353,26 @@ export class Store {
       this.db.run("PRAGMA foreign_keys = ON");
     }
 
-    this.sweepScheduledCloses();
+    this.sweepSchedule();
     this.db.query("UPDATE polls SET opened_at = COALESCE(opened_at, created_at) WHERE status = 'open'").run();
   }
 
-  sweepScheduledCloses() {
+  /**
+   * Applies time-driven transitions: scheduled polls whose `opens_at` has
+   * passed become open (opened_at = opens_at), then open polls that were
+   * manually closed or whose `closes_at` has passed become closed.
+   */
+  sweepSchedule() {
     const now = new Date().toISOString();
+    const opening = this.db.query("SELECT EXISTS(SELECT 1 FROM polls WHERE status = 'scheduled' AND opens_at IS NOT NULL AND opens_at <= ?) AS due").get(now) as { due: number };
+    if (opening.due) {
+      this.db.query(`
+        UPDATE polls
+        SET status = 'open',
+            opened_at = COALESCE(opened_at, opens_at)
+        WHERE status = 'scheduled' AND opens_at IS NOT NULL AND opens_at <= ?
+      `).run(now);
+    }
     const due = this.db.query(`
       SELECT EXISTS(
         SELECT 1 FROM polls
@@ -377,25 +391,25 @@ export class Store {
   }
 
   listPolls(): Poll[] {
-    this.sweepScheduledCloses();
+    this.sweepSchedule();
     return (this.db.query("SELECT * FROM polls ORDER BY created_at DESC").all() as PollRow[]).map(mapPoll);
   }
 
   getPoll(id: number): Poll | null {
-    this.sweepScheduledCloses();
+    this.sweepSchedule();
     const row = this.db.query("SELECT * FROM polls WHERE id = ?").get(id) as PollRow | null;
     return row ? mapPoll(row) : null;
   }
 
   getPollBySlug(slug: string): Poll | null {
-    this.sweepScheduledCloses();
+    this.sweepSchedule();
     const row = this.db.query("SELECT * FROM polls WHERE slug = ?").get(slug) as PollRow | null;
     return row ? mapPoll(row) : null;
   }
 
   /** Cheap change marker for live refresh: one aggregate query, no tally. Null if the slug is unknown. */
   pollVersion(slug: string): string | null {
-    this.sweepScheduledCloses();
+    this.sweepSchedule();
     const now = new Date().toISOString();
     const row = this.db.query(`
       SELECT p.status AS status,
@@ -572,6 +586,40 @@ export class Store {
     if (!token) return false;
     const rows = this.db.query("SELECT edit_token_hash FROM votes WHERE poll_id = ? AND edit_token_hash != ''").all(pollId) as Array<{ edit_token_hash: string }>;
     return rows.some((row) => tokenMatches(row.edit_token_hash, token));
+  }
+
+  /** Draft -> scheduled. The caller has checked `opens_at` is set, in the future, and before `closes_at`. */
+  schedulePoll(pollId: number): boolean {
+    const result = this.db.query("UPDATE polls SET status = 'scheduled' WHERE id = ? AND status = 'draft' AND opens_at IS NOT NULL").run(pollId);
+    return result.changes > 0;
+  }
+
+  /** Scheduled -> draft (setup becomes editable again). Returns false if it already opened. */
+  unschedulePoll(pollId: number): boolean {
+    this.sweepSchedule();
+    const result = this.db.query("UPDATE polls SET status = 'draft' WHERE id = ? AND status = 'scheduled'").run(pollId);
+    return result.changes > 0;
+  }
+
+  /**
+   * A new draft with the source's type, title ("Copy of ..."), details, config,
+   * options and invitee names, and a new admin token (hence fresh invite links).
+   * No votes and no dates are carried over.
+   */
+  duplicatePoll(pollId: number, adminToken: string): { id: number; slug: string } {
+    const source = this.getPoll(pollId);
+    if (!source) throw new Error("Poll not found.");
+    return this.createPoll({
+      type: source.type,
+      title: `Copy of ${source.title}`.slice(0, 200),
+      details: source.details,
+      config: source.config,
+      opensAt: null,
+      closesAt: null,
+      options: this.getOptions(pollId).map((option) => ({ label: option.label, meaning: option.meaning })),
+      adminToken,
+      invitees: this.getInvites(pollId).map((invite) => invite.name)
+    });
   }
 
   openPoll(pollId: number): boolean {

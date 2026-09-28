@@ -3,7 +3,7 @@ import { deriveInviteToken, hashToken, MAX_INVITEES, Store, tokenMatches, type C
 import { baseConfig, defaultConfigFor, templateByType } from "../../templates";
 import { tallyPoll, validateBallot } from "../../tally";
 import { isProposalType, POLL_TYPES, type Invite, type Option, type Poll, type PollConfig, type PollType, type PublicTallyResult, type TallyResult, type Vote } from "../../types";
-import { isClosed, isOpen } from "../shared";
+import { isClosed, parseSlot } from "../shared";
 import { seededShuffle } from "../shuffle";
 
 let store: Store | null = null;
@@ -55,7 +55,7 @@ export function publicTally(tally: TallyResult): PublicTallyResult {
 }
 
 export function canShowResults(poll: Poll, viewerVote: Vote | null): boolean {
-  if (poll.status === "draft") return false;
+  if (poll.status === "draft" || poll.status === "scheduled") return false;
   if (isClosed(poll)) return true;
   if (poll.config.hideResults === "off") return true;
   if (poll.config.hideResults === "after_vote") return Boolean(viewerVote);
@@ -90,7 +90,11 @@ export function inputFromData(data: Record<string, unknown>): CreatePollInput {
   if (!title) throw new Error("Title is required.");
   const options = parseOptions(stringField(data.optionsText));
   const config = parseConfig(type, data);
+  if (type === "time_poll") normalizeTimeOptions(options);
   validatePollSetup(type, config, options);
+  const opensAt = dateField(data.opensAt);
+  const closesAt = dateField(data.closesAt);
+  if (opensAt && closesAt && opensAt >= closesAt) throw new Error("Opens at must be before closes at.");
   const invitees = config.voterMode === "invite" ? parseInvitees(stringField(data.inviteesText)) : [];
   if (config.voterMode === "invite" && invitees.length < 1) throw new Error("Invite-only polls need at least one invitee.");
   return {
@@ -98,8 +102,8 @@ export function inputFromData(data: Record<string, unknown>): CreatePollInput {
     title,
     details: limitedField(data.details, "Details", LIMITS.details),
     config,
-    opensAt: dateField(data.opensAt),
-    closesAt: dateField(data.closesAt),
+    opensAt,
+    closesAt,
     options,
     invitees
   };
@@ -229,8 +233,9 @@ export function involvedPolls(cookies: Cookies): Involvement[] {
     const poll = db.getPoll(id);
     if (!poll) continue;
     if (adminCookieToken(cookies, id)) result.push({ poll, role: "admin" });
-    else if (poll.status !== "draft" && db.hasVoteToken(id, voteTokenFor(cookies, id))) result.push({ poll, role: "voter" });
-    else if (poll.status !== "draft" && currentInvite(cookies, poll)) result.push({ poll, role: "invitee" });
+    else if (poll.status === "draft" || poll.status === "scheduled") continue;
+    else if (db.hasVoteToken(id, voteTokenFor(cookies, id))) result.push({ poll, role: "voter" });
+    else if (currentInvite(cookies, poll)) result.push({ poll, role: "invitee" });
   }
   return result.sort((a, b) => b.poll.createdAt.localeCompare(a.poll.createdAt));
 }
@@ -276,6 +281,19 @@ export function ballotOptionsFor(poll: Poll, options: Option[], cookies: Cookies
     cookies.set(shuffleSeedCookie(poll.id), seed, TOKEN_COOKIE_OPTIONS);
   }
   return seededShuffle(options, `${poll.slug}:${seed}`);
+}
+
+/**
+ * Who this browser votes as and their existing ballot. In invite mode that is
+ * the invitee their cookie names (the invite token is the ballot's edit token);
+ * otherwise the remembered display name.
+ */
+export function viewerContext(poll: Poll, cookies: Cookies) {
+  const inviteMode = poll.config.voterMode === "invite";
+  const invite = inviteMode ? currentInvite(cookies, poll) : null;
+  const viewerName = invite ? invite.name : inviteMode ? "" : voterNameFor(cookies, poll.id);
+  const viewerVote = viewerName ? getStore().getVoteByName(poll.id, viewerName, invite ? invite.token : voteTokenFor(cookies, poll.id)) : null;
+  return { inviteMode, invite, viewerName, viewerVote };
 }
 
 export function voteTokenFor(cookies: Cookies, pollId: number): string {
@@ -376,8 +394,45 @@ export function openPollOrThrow(slug: string, cookies: Cookies) {
   const poll = db.getPollBySlug(slug);
   if (!poll) throw new Error("Poll not found.");
   requirePollAdmin(cookies, poll.id);
+  if (poll.status === "scheduled") throw new Error("This poll is scheduled to open by itself. Unschedule it to open it now.");
   if (!db.openPoll(poll.id)) throw new Error("Only draft polls can be opened.");
   return poll;
+}
+
+/** Draft -> scheduled: needs `opensAt` in the future (and before `closesAt`); the poll then opens itself and setup is frozen. */
+export function schedulePollOrThrow(slug: string, cookies: Cookies) {
+  const db = getStore();
+  const poll = db.getPollBySlug(slug);
+  if (!poll) throw new Error("Poll not found.");
+  requirePollAdmin(cookies, poll.id);
+  if (poll.status !== "draft") throw new Error("Only draft polls can be scheduled.");
+  if (!poll.opensAt) throw new Error("Set an opening time before scheduling.");
+  if (poll.opensAt <= new Date().toISOString()) throw new Error("The opening time must be in the future to schedule.");
+  if (poll.closesAt && poll.opensAt >= poll.closesAt) throw new Error("Opens at must be before closes at.");
+  if (!db.schedulePoll(poll.id)) throw new Error("Could not schedule this poll.");
+  return poll;
+}
+
+export function unschedulePollOrThrow(slug: string, cookies: Cookies) {
+  const db = getStore();
+  const poll = db.getPollBySlug(slug);
+  if (!poll) throw new Error("Poll not found.");
+  requirePollAdmin(cookies, poll.id);
+  if (poll.status !== "scheduled") throw new Error("Only scheduled polls can be unscheduled.");
+  if (!db.unschedulePoll(poll.id)) throw new Error("This poll has already opened.");
+  return poll;
+}
+
+/** Admin-only copy of any poll as a new draft; the caller's browser becomes admin of the copy. */
+export function duplicatePollOrThrow(slug: string, cookies: Cookies): { id: string; adminToken: string } {
+  const db = getStore();
+  const poll = db.getPollBySlug(slug);
+  if (!poll) throw new Error("Poll not found.");
+  requirePollAdmin(cookies, poll.id);
+  const adminToken = crypto.randomUUID();
+  const copy = db.duplicatePoll(poll.id, adminToken);
+  cookies.set(adminTokenCookie(copy.id), adminToken, TOKEN_COOKIE_OPTIONS);
+  return { id: copy.slug, adminToken };
 }
 
 export function closePollOrThrow(slug: string, cookies: Cookies) {
@@ -386,6 +441,7 @@ export function closePollOrThrow(slug: string, cookies: Cookies) {
   if (!poll) throw new Error("Poll not found.");
   requirePollAdmin(cookies, poll.id);
   if (poll.status === "draft") throw new Error("Open the draft before closing it.");
+  if (poll.status === "scheduled") throw new Error("This poll has not opened yet. Unschedule it or delete it instead.");
   db.closePoll(poll.id);
   return poll;
 }
@@ -512,6 +568,28 @@ function validatePollSetup(type: PollType, config: PollConfig, options: Array<{ 
 
   if (type === "time_poll" && (config.meetingDurationMinutes ?? 60) < 1) {
     throw new Error("Meeting duration must be at least 1 minute.");
+  }
+}
+
+/**
+ * Time-poll labels are instants stored as ISO 8601 UTC. Accepts full ISO with a
+ * zone (what the editor sends) and, for the no-JS fallback, `YYYY-MM-DD HH:MM`
+ * (or with `T`, optional seconds) read as UTC. Rewrites labels in place.
+ */
+function normalizeTimeOptions(options: Array<{ label: string; meaning: string }>) {
+  const seen = new Set<string>();
+  for (const option of options) {
+    let date = parseSlot(option.label);
+    const naive = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?$/.exec(option.label);
+    if (!date && naive) {
+      const [year, month, day, hour, minute, second] = naive.slice(1).map((part) => Number(part ?? 0)) as [number, number, number, number, number, number];
+      const utc = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+      if (utc.getUTCFullYear() === year && utc.getUTCMonth() === month - 1 && utc.getUTCDate() === day && utc.getUTCHours() === hour) date = utc;
+    }
+    if (!date) throw new Error(`Timeslot "${option.label}" is not a valid date and time (for example 2026-10-05T14:00:00Z).`);
+    option.label = date.toISOString();
+    if (seen.has(option.label)) throw new Error("Each timeslot must be different.");
+    seen.add(option.label);
   }
 }
 

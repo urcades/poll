@@ -3,6 +3,7 @@ import { templateByType } from "../templates";
 import type { Poll, PublicTallyResult, RoundLog } from "../types";
 
 export function isClosed(poll: Poll): boolean {
+  if (poll.status === "scheduled") return false;
   const now = new Date();
   return poll.status === "closed" || Boolean(poll.manuallyClosedAt) || Boolean(poll.closesAt && new Date(poll.closesAt) <= now);
 }
@@ -17,11 +18,76 @@ export function isOpen(poll: Poll): boolean {
 
 export function statusLabel(poll: Poll): string {
   if (poll.status === "draft") return "Draft";
+  if (poll.status === "scheduled") return "Scheduled";
   return isClosed(poll) ? "Closed" : "Active";
 }
 
 export function formatDate(value: string): string {
   return new Date(value).toLocaleString();
+}
+
+/** Timeslot labels in the canonical (and only displayed-as-date) form: full ISO 8601 with a zone. */
+const ISO_SLOT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
+
+/** The instant a time-poll label denotes, or null for legacy free text (which is then shown as-is). */
+export function parseSlot(label: string): Date | null {
+  if (!ISO_SLOT.test(label)) return null;
+  const date = new Date(label);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+/**
+ * Human text for a timeslot, e.g. "Mon 5 Oct, 14:00-15:00 (GMT+2)". With no
+ * `timeZone` it uses the runtime's local zone, so call it in the browser; the
+ * server passes "UTC". Non-date labels come back untouched. `minutes <= 0`
+ * gives a single moment instead of a range.
+ */
+export function formatSlot(label: string, minutes = 0, timeZone?: string): string {
+  const start = parseSlot(label);
+  if (!start) return label;
+  const zone = timeZone ? { timeZone } : {};
+  const parts = (date: Date, withZone: boolean) => {
+    const map: Record<string, string> = {};
+    const format = new Intl.DateTimeFormat("en-GB", {
+      ...zone,
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+      ...(withZone ? { timeZoneName: "shortOffset" as const } : {})
+    });
+    for (const part of format.formatToParts(date)) map[part.type] = part.value;
+    return map;
+  };
+  const from = parts(start, true);
+  const zoneName = timeZone === "UTC" ? "UTC" : from.timeZoneName ?? "";
+  const day = (p: Record<string, string>) => `${p.weekday} ${p.day} ${p.month}`;
+  const clock = (p: Record<string, string>) => `${p.hour}:${p.minute}`;
+  const suffix = zoneName ? ` (${zoneName})` : "";
+  if (!(minutes > 0)) return `${day(from)}, ${clock(from)}${suffix}`;
+  const to = parts(new Date(start.getTime() + minutes * 60_000), false);
+  const end = day(to) === day(from) ? clock(to) : `${day(to)}, ${clock(to)}`;
+  return `${day(from)}, ${clock(from)}\u2013${end}${suffix}`;
+}
+
+export interface PollMeta {
+  title: string;
+  description: string;
+  url: string;
+  image: string;
+}
+
+/** Open Graph / Twitter card fields. Built only from public poll fields and the request origin: never a token, invitee or vote. */
+export function pollMeta(poll: Poll, origin: string, path = `/poll/${poll.slug}`, titlePrefix = ""): PollMeta {
+  const details = poll.details.replace(/\s+/g, " ").trim();
+  return {
+    title: `${titlePrefix}${poll.title}`,
+    description: details ? shorten(details, 197) : `${labelForPoll(poll)} \u00b7 ${statusLabel(poll)}`,
+    url: `${origin}${path}`,
+    image: `${origin}/og.png`
+  };
 }
 
 export function dateTimeLocalValue(value: string | null): string {

@@ -7,6 +7,15 @@ import { POST as editPollRoute } from "../src/routes/api/polls/[id]/+server";
 import { POST as openPollRoute } from "../src/routes/api/polls/[id]/open/+server";
 import { POST as closePollRoute } from "../src/routes/api/polls/[id]/close/+server";
 import { POST as voteRoute } from "../src/routes/api/polls/[id]/votes/+server";
+import { POST as scheduleRoute } from "../src/routes/api/polls/[id]/schedule/+server";
+import { POST as unscheduleRoute } from "../src/routes/api/polls/[id]/unschedule/+server";
+import { POST as duplicateRoute } from "../src/routes/api/polls/[id]/duplicate/+server";
+import { GET as icsRoute } from "../src/routes/poll/[id]/event.ics/+server";
+import { load as resultsLoad } from "../src/routes/poll/[id]/results/+page.server";
+import { buildIcs, icsEscape, icsFold } from "../src/lib/ics";
+import { formatSlot, parseSlot, pollMeta } from "../src/lib/shared";
+import { classifyRequest } from "../src/lib/server/ratelimit";
+import { defaultConfigFor, defaultTimeSlots } from "../src/templates";
 import { GET as versionRoute } from "../src/routes/poll/[id]/version/+server";
 import { GET as exportCsvRoute } from "../src/routes/poll/[id]/export.csv/+server";
 import { GET as exportJsonRoute } from "../src/routes/poll/[id]/export.json/+server";
@@ -1261,3 +1270,436 @@ describe("SvelteKit app integration", () => {
     expect("allowComments" in db.getPollBySlug(fresh.id)!.config).toBe(false);
   });
 });
+
+const inFuture = (ms: number) => new Date(Date.now() + ms).toISOString();
+
+async function slotPoll(overrides: Record<string, unknown> = {}) {
+  return await createPoll({
+    type: "time_poll",
+    title: "Team sync, weekly; \\ notes",
+    details: "Agenda: a, b; c\nSecond line",
+    optionsText: "2026-10-05T14:00:00Z\n2026-10-06T09:30:00+02:00 | morning\n2026-10-07 16:00",
+    meetingDurationMinutes: "90",
+    ...overrides
+  });
+}
+
+async function voteSlots(id: string, name: string, states: string[], jar: CookieJar = cookieJar()) {
+  const db = store!;
+  const options = db.getOptions(pid(db, id));
+  const body: Record<string, unknown> = { voterName: name };
+  options.forEach((option, index) => {
+    body[`availability_${option.id}`] = states[index] ?? "unavailable";
+  });
+  expect((await postJson(voteRoute, { id }, body, jar)).status).toBe(200);
+}
+
+async function getIcs(id: string, jar: CookieJar = cookies) {
+  return await icsRoute({ params: { id }, url: new URL(`http://local.test/poll/${id}/event.ics`), cookies: jar } as never);
+}
+
+describe("real time polls", () => {
+  test("options are normalized to ISO UTC; non-dates and duplicates are rejected", async () => {
+    const db = storeFixture();
+    const { id } = await slotPoll();
+    expect(db.getOptions(pid(db, id)).map((option) => option.label)).toEqual([
+      "2026-10-05T14:00:00.000Z",
+      "2026-10-06T07:30:00.000Z",
+      "2026-10-07T16:00:00.000Z"
+    ]);
+    expect(db.getOptions(pid(db, id))[1]?.meaning).toBe("morning");
+
+    for (const optionsText of ["Friday evening", "2026-13-40 10:00", "2026-10-05T14:00:00Z\n2026-10-05 14:00"]) {
+      const response = await postJson(createPollRoute, {}, { type: "time_poll", title: "Bad", optionsText });
+      expect(response.status).toBe(400);
+    }
+    // Other poll types keep free-text labels.
+    expect((await postJson(createPollRoute, {}, { type: "choose", title: "Free", optionsText: "Friday evening\nSaturday" })).status).toBe(200);
+    // Editing a draft is validated the same way.
+    const edit = await postJson(editPollRoute, { id }, { type: "time_poll", title: "x", optionsText: "soon" });
+    expect(edit.status).toBe(400);
+  });
+
+  test("default slots are upcoming weekdays relative to now", () => {
+    const slots = defaultTimeSlots(new Date(2026, 8, 25, 12, 0)); // Friday
+    const dates = slots.map((slot) => new Date(slot.label));
+    expect(dates.every((date) => !Number.isNaN(date.getTime()))).toBe(true);
+    expect(dates.map((date) => [date.getDay(), date.getHours()])).toEqual([[1, 10], [1, 14], [2, 10]]);
+    const later = defaultTimeSlots(new Date(2027, 0, 5, 9, 0));
+    expect(later.map((slot) => slot.label)).not.toEqual(slots.map((slot) => slot.label));
+    for (const slot of later) expect(new Date(slot.label).getTime()).toBeGreaterThan(new Date(2027, 0, 5, 9, 0).getTime());
+  });
+
+  test("formats slots in a given zone and leaves legacy labels alone", () => {
+    expect(parseSlot("2026-10-05T14:00:00.000Z")).toBeInstanceOf(Date);
+    expect(parseSlot("2026-06-05 10:00")).toBeNull();
+    expect(parseSlot("Friday evening")).toBeNull();
+    expect(formatSlot("2026-10-05T14:00:00.000Z", 60, "UTC")).toBe("Mon 5 Oct, 14:00\u201315:00 (UTC)");
+    expect(formatSlot("2026-10-05T14:00:00.000Z", 60, "Europe/Paris")).toBe("Mon 5 Oct, 16:00\u201317:00 (GMT+2)");
+    expect(formatSlot("2026-10-05T23:30:00.000Z", 60, "UTC")).toBe("Mon 5 Oct, 23:30\u2013Tue 6 Oct, 00:30 (UTC)");
+    expect(formatSlot("2026-10-05T14:00:00.000Z", 0, "UTC")).toBe("Mon 5 Oct, 14:00 (UTC)");
+    expect(formatSlot("Friday evening", 60, "UTC")).toBe("Friday evening");
+    expect(formatSlot("2026-06-05 10:00", 60, "UTC")).toBe("2026-06-05 10:00");
+  });
+
+  test("legacy free-text time polls still load, take votes, and show their labels", async () => {
+    const db = storeFixture();
+    const created = db.createPoll({
+      type: "time_poll",
+      title: "Old poll",
+      details: "",
+      config: defaultConfigFor("time_poll"),
+      opensAt: null,
+      closesAt: null,
+      options: [{ label: "Friday evening", meaning: "" }, { label: "2026-06-05 10:00", meaning: "" }],
+      adminToken: "legacy-admin"
+    });
+    cookies.set(`poll_${created.id}_admin_token`, "legacy-admin");
+    await openPoll(created.slug);
+    await voteSlots(created.slug, "Ada", ["available", "if_needed"]);
+    await closePoll(created.slug);
+    const page = await loadPoll(created.slug);
+    expect(page.tally?.rows.map((row) => row.label)).toEqual(["Friday evening", "2026-06-05 10:00"]);
+    expect(page.poll.title).toBe("Old poll");
+    expect((await getIcs(created.slug)).status).toBe(404);
+  });
+});
+
+describe("calendar export", () => {
+  test("ics helpers escape, fold, and terminate lines with CRLF", () => {
+    expect(icsEscape("a,b;c\\d\ne")).toBe("a\\,b\\;c\\\\d\\ne");
+    const long = "SUMMARY:" + "x".repeat(200);
+    const folded = icsFold(long).split("\r\n");
+    expect(folded.length).toBeGreaterThan(2);
+    expect(folded[0]!.length).toBe(75);
+    for (const line of folded.slice(1)) {
+      expect(line.startsWith(" ")).toBe(true);
+      expect(line.length).toBeLessThanOrEqual(75);
+    }
+    expect(folded.join("").replace(/ /g, "")).toBe(long);
+    // Multibyte characters are never split.
+    const emoji = icsFold("DESCRIPTION:" + "\u00e9\u{1F600}".repeat(60));
+    for (const line of emoji.split("\r\n")) expect(new TextEncoder().encode(line).length).toBeLessThanOrEqual(75);
+    expect(emoji.replace(/\r\n /g, "")).toBe("DESCRIPTION:" + "\u00e9\u{1F600}".repeat(60));
+    const text = buildIcs({ uid: "u@h", stamp: new Date("2026-10-01T00:00:00Z"), start: new Date("2026-10-05T14:00:00Z"), end: new Date("2026-10-05T15:00:00Z"), summary: "S", description: "" });
+    expect(text.endsWith("END:VCALENDAR\r\n")).toBe(true);
+    expect(text.replace(/\r\n/g, "")).not.toMatch(/[\r\n]/);
+    expect(text).not.toContain("DESCRIPTION");
+  });
+
+  test("closed time poll serves the winning slot as .ics to anyone", async () => {
+    const db = storeFixture();
+    const { id } = await slotPoll();
+    await openPoll(id);
+    expect((await getIcs(id, cookieJar())).status).toBe(400); // open, not closed
+    await voteSlots(id, "Ada", ["if_needed", "available", "unavailable"]);
+    await voteSlots(id, "Bob", ["unavailable", "available", "available"]);
+    await closePoll(id);
+
+    const response = await getIcs(id, cookieJar()); // a stranger, not the admin
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/calendar");
+    expect(response.headers.get("content-disposition")).toContain(".ics");
+    const body = await response.text();
+    expect(body.startsWith("BEGIN:VCALENDAR\r\nVERSION:2.0\r\n")).toBe(true);
+    expect(body.endsWith("END:VEVENT\r\nEND:VCALENDAR\r\n")).toBe(true);
+    expect(body.replace(/\r\n/g, "")).not.toMatch(/[\r\n]/);
+    for (const line of body.split("\r\n")) expect(new TextEncoder().encode(line).length).toBeLessThanOrEqual(75);
+    // Slot 2 (2 available) wins; duration 90 minutes; UTC stamps.
+    const unfolded = body.replace(/\r\n /g, "");
+    expect(unfolded).toContain("DTSTART:20261006T073000Z\r\n");
+    expect(unfolded).toContain("DTEND:20261006T090000Z\r\n");
+    expect(unfolded).toMatch(/DTSTAMP:\d{8}T\d{6}Z\r\n/);
+    expect(unfolded).toMatch(/UID:[0-9a-f]{32}@local\.test\r\n/);
+    expect(unfolded).toContain("SUMMARY:Team sync\\, weekly\\; \\\\ notes\r\n");
+    expect(unfolded).toContain("DESCRIPTION:Agenda: a\\, b\\; c\\nSecond line\r\n");
+    expect(unfolded).not.toContain(pid(db, id) + "@");
+  });
+
+  test("ics is 404 for non-time polls and 400 for drafts; 404 without a winner", async () => {
+    storeFixture();
+    const choose = await createPoll();
+    expect((await getIcs(choose.id)).status).toBe(404);
+    const draft = await slotPoll();
+    expect((await getIcs(draft.id)).status).toBe(400);
+    expect((await getIcs("nope123456")).status).toBe(404);
+    await openPoll(draft.id);
+    await voteSlots(draft.id, "Ada", ["unavailable", "unavailable", "unavailable"]);
+    await closePoll(draft.id);
+    expect((await getIcs(draft.id)).status).toBe(404);
+  });
+});
+
+describe("scheduled opening", () => {
+  test("draft -> scheduled -> open at opens_at, votes then accepted; setup frozen while scheduled", async () => {
+    const db = storeFixture();
+    const { id } = await createPoll({ opensAt: inFuture(3_600_000), closesAt: inFuture(7_200_000) });
+    expect((await postJson(scheduleRoute, { id }, {})).status).toBe(200);
+    expect(db.getPollBySlug(id)?.status).toBe("scheduled");
+
+    // Frozen: no edit, no manual open or close, no voting.
+    expect((await postJson(editPollRoute, { id }, { type: "choose", title: "x", optionsText: "A\nB" })).status).toBe(400);
+    expect((await postJson(openPollRoute, { id }, {})).status).toBe(400);
+    expect((await postJson(closePollRoute, { id }, {})).status).toBe(400);
+    expect((await postJson(voteRoute, { id }, { voterName: "Early", selected: [] }, cookieJar())).status).toBe(400);
+
+    // Time passes: still scheduled just before, open just after.
+    const options = db.getOptions(pid(db, id));
+    db.db.query("UPDATE polls SET opens_at = ? WHERE slug = ?").run(inFuture(60_000), id);
+    db.sweepSchedule();
+    expect(db.getPollBySlug(id)?.status).toBe("scheduled");
+    const opensAt = new Date(Date.now() - 1000).toISOString();
+    db.db.query("UPDATE polls SET opens_at = ? WHERE slug = ?").run(opensAt, id);
+    const poll = db.getPollBySlug(id)!;
+    expect(poll.status).toBe("open");
+    expect(poll.openedAt).toBe(opensAt);
+    const voted = await postJson(voteRoute, { id }, { voterName: "Ada", selected: [String(options[0]!.id)] }, cookieJar());
+    expect(voted.status).toBe(200);
+  });
+
+  test("scheduling needs a future opens_at before closes_at; unschedule returns to an editable draft", async () => {
+    const db = storeFixture();
+    const none = await createPoll();
+    expect((await postJson(scheduleRoute, { id: none.id }, {})).status).toBe(400);
+
+    const past = await createPoll({ opensAt: new Date(Date.now() - 60_000).toISOString() });
+    const pastResponse = await postJson(scheduleRoute, { id: past.id }, {});
+    expect(pastResponse.status).toBe(400);
+    expect((await pastResponse.json() as { error: string }).error).toContain("future");
+
+    const backwards = await postJson(createPollRoute, {}, { type: "choose", title: "x", optionsText: "A\nB", opensAt: inFuture(7_200_000), closesAt: inFuture(3_600_000) });
+    expect(backwards.status).toBe(400);
+    expect((await backwards.json() as { error: string }).error).toContain("before");
+
+    const ok = await createPoll({ opensAt: inFuture(3_600_000) });
+    expect((await postJson(unscheduleRoute, { id: ok.id }, {})).status).toBe(400); // not scheduled yet
+    expect((await postJson(scheduleRoute, { id: ok.id }, {})).status).toBe(200);
+    expect((await postJson(scheduleRoute, { id: ok.id }, {})).status).toBe(400); // already scheduled
+    expect((await postJson(unscheduleRoute, { id: ok.id }, {})).status).toBe(200);
+    expect(db.getPollBySlug(ok.id)?.status).toBe("draft");
+    expect((await postJson(editPollRoute, { id: ok.id }, { type: "choose", title: "Edited", optionsText: "A\nB" })).status).toBe(200);
+    expect((await postJson(openPollRoute, { id: ok.id }, {})).status).toBe(200);
+  });
+
+  test("only the admin can schedule or unschedule", async () => {
+    const db = storeFixture();
+    const { id } = await createPoll({ opensAt: inFuture(3_600_000) });
+    const stranger = cookieJar();
+    expect((await postJson(scheduleRoute, { id }, {}, stranger)).status).toBe(400);
+    expect(db.getPollBySlug(id)?.status).toBe("draft");
+    await postJson(scheduleRoute, { id }, {});
+    expect((await postJson(unscheduleRoute, { id }, {}, stranger)).status).toBe(400);
+    expect(db.getPollBySlug(id)?.status).toBe("scheduled");
+    const form = await pollActions.schedule({ params: { id }, cookies: stranger } as never);
+    expect((form as { status: number }).status).toBe(400);
+  });
+
+  test("scheduled polls are listed for the admin with drafts and hidden from others; visitors get no ballot", async () => {
+    const db = storeFixture();
+    const { id } = await createPoll({ title: "Later", opensAt: inFuture(3_600_000) });
+    await postJson(scheduleRoute, { id }, {});
+
+    const adminPage = homeLoad({ cookies } as never);
+    expect(adminPage.drafts.map(({ poll }) => [poll.title, poll.status])).toEqual([["Later", "scheduled"]]);
+    expect(adminPage.active).toHaveLength(0);
+
+    const visitor = cookieJar();
+    expect(homeLoad({ cookies: visitor } as never).drafts).toHaveLength(0);
+    // Not even a browser holding an invite or vote cookie sees it.
+    visitor.set(`poll_${pid(db, id)}_vote_token`, "x");
+    expect(homeLoad({ cookies: visitor } as never).drafts).toHaveLength(0);
+
+    const visitorPage = await loadPoll(id, cookieJar());
+    expect(visitorPage.poll.status).toBe("scheduled");
+    expect(visitorPage.poll.opensAt).toBeTruthy();
+    expect(visitorPage.options).toEqual([]);
+    expect(visitorPage.ballotOptions).toEqual([]);
+    expect(visitorPage.tally).toBeNull();
+    const adminView = await loadPoll(id);
+    expect(adminView.isAdmin).toBe(true);
+    expect(adminView.ballotOptions.length).toBe(3);
+    // No results page yet.
+    await expect(Promise.resolve().then(() => resultsLoad({ params: { id }, cookies: cookieJar() } as never))).rejects.toMatchObject({ status: 404 });
+  });
+
+  test("the version marker changes when a scheduled poll opens", async () => {
+    const db = storeFixture();
+    const { id } = await createPoll({ opensAt: inFuture(3_600_000) });
+    await postJson(scheduleRoute, { id }, {});
+    const before = db.pollVersion(id);
+    db.db.query("UPDATE polls SET opens_at = ? WHERE slug = ?").run(new Date(Date.now() - 1000).toISOString(), id);
+    const response = await versionRoute({ params: { id } } as never);
+    expect((await response.json() as { version: string }).version).not.toBe(before);
+    expect(db.getPollBySlug(id)?.status).toBe("open");
+  });
+
+  test("a scheduled poll whose window has fully passed ends up closed", async () => {
+    const db = storeFixture();
+    const { id } = await createPoll({ opensAt: inFuture(3_600_000), closesAt: inFuture(7_200_000) });
+    await postJson(scheduleRoute, { id }, {});
+    db.db.query("UPDATE polls SET opens_at = ?, closes_at = ? WHERE slug = ?").run(inFuture(-7_200_000), inFuture(-3_600_000), id);
+    const poll = db.getPollBySlug(id)!;
+    expect(poll.status).toBe("closed");
+    expect(poll.closedAt).toBe(poll.closesAt);
+  });
+});
+
+describe("duplicate poll", () => {
+  test("copies setup and invitees into a new draft with fresh tokens and no votes", async () => {
+    const db = storeFixture();
+    const original = await createPoll({
+      type: "approval",
+      title: "Lunch",
+      details: "Where?",
+      optionsText: "Pizza | cheesy\nSushi",
+      voterMode: "invite",
+      inviteesText: "Ada\nBob",
+      anonymous: "on",
+      quorumPercent: 50,
+      reasonMode: "required",
+      closesAt: inFuture(3_600_000)
+    });
+    await openPoll(original.id);
+    const ada = cookieJar();
+    const adminJar = cookies;
+    const invitations = (await loadPoll(original.id, adminJar)).invitations!;
+    const adaLink = new URL(invitations[0]!.link!, "http://local.test");
+    await loadPoll(original.id, ada, adaLink.search).catch(() => undefined); // redirects to the clean URL, setting the cookie
+    const options = db.getOptions(pid(db, original.id));
+    expect((await postJson(voteRoute, { id: original.id }, { selected: [String(options[0]!.id)], reason: "yum" }, ada)).status).toBe(200);
+
+    const response = await postJson(duplicateRoute, { id: original.id }, {});
+    expect(response.status).toBe(200);
+    const copy = await response.json() as { id: string; adminToken: string };
+    expect(copy.id).toMatch(SLUG_PATTERN);
+    expect(copy.id).not.toBe(original.id);
+    expect(copy.adminToken).not.toBe(original.adminToken);
+    expect(cookies.get(`poll_${pid(db, copy.id)}_admin_token`)).toBe(copy.adminToken);
+
+    const a = db.getPollBySlug(original.id)!;
+    const b = db.getPollBySlug(copy.id)!;
+    expect(b.status).toBe("draft");
+    expect(b.title).toBe("Copy of Lunch");
+    expect([b.type, b.details, b.config]).toEqual([a.type, a.details, a.config]);
+    expect(db.getOptions(b.id).map((o) => [o.label, o.meaning])).toEqual([["Pizza", "cheesy"], ["Sushi", ""]]);
+    expect(db.getVotes(b.id)).toEqual([]);
+    expect(db.getInvites(b.id).map((invite) => invite.name)).toEqual(["Ada", "Bob"]);
+    expect([b.opensAt, b.closesAt]).toEqual([null, null]); // dates are not carried over
+
+    // Invitees get fresh links that work only on the copy.
+    const copyInvites = (await loadPoll(copy.id)).invitations!;
+    expect(copyInvites.map((invite) => invite.name)).toEqual(["Ada", "Bob"]);
+    expect(copyInvites.map((invite) => invite.link)).not.toEqual(invitations.map((invite) => invite.link));
+    expect(db.findInviteByToken(b.id, deriveInviteToken(original.adminToken, db.getInvites(a.id)[0]!.id))).toBeNull();
+    expect(db.findInviteByToken(b.id, deriveInviteToken(copy.adminToken, db.getInvites(b.id)[0]!.id))?.name).toBe("Ada");
+    // The original is untouched.
+    expect(db.getVotes(a.id)).toHaveLength(1);
+  });
+
+  test("works on closed polls, redirects the form action to the edit page, and is admin only", async () => {
+    const db = storeFixture();
+    const { id } = await createPoll();
+    await openPoll(id);
+    await closePoll(id);
+
+    const stranger = cookieJar();
+    expect((await postJson(duplicateRoute, { id }, {}, stranger)).status).toBe(400);
+    expect(db.listPolls()).toHaveLength(1);
+    expect(((await pollActions.duplicate({ params: { id }, cookies: stranger } as never)) as { status: number }).status).toBe(400);
+    expect((await postJson(duplicateRoute, { id: "nope123456" }, {})).status).toBe(400);
+
+    let location = "";
+    try {
+      await pollActions.duplicate({ params: { id }, cookies } as never);
+    } catch (thrown) {
+      location = (thrown as { location: string }).location;
+    }
+    expect(location).toMatch(/^\/poll\/[0-9A-Za-z]{10}\/edit$/);
+    expect(db.listPolls()).toHaveLength(2);
+  });
+
+  test("duplicating counts against the creation rate limit", () => {
+    expect(classifyRequest("POST", "/api/polls/abcdefghij/duplicate")).toBe("create");
+    expect(classifyRequest("POST", "/poll/abcdefghij", "?/duplicate")).toBe("create");
+    expect(classifyRequest("POST", "/poll/abcdefghij", "?/close")).toBe("mutate");
+  });
+});
+
+describe("results page", () => {
+  const resultsFor = (id: string, jar: CookieJar = cookies) => Promise.resolve().then(() => resultsLoad({ params: { id }, cookies: jar } as never));
+
+  test("closed polls show results to anyone; anonymous mode is honoured", async () => {
+    const db = storeFixture();
+    const { id } = await createPoll({ anonymous: "on" });
+    await openPoll(id);
+    const options = db.getOptions(pid(db, id));
+    await postJson(voteRoute, { id }, { voterName: "Ada", selected: [String(options[0]!.id)], reason: "secret reason" }, cookieJar());
+    await closePoll(id);
+    const page = await resultsFor(id, cookieJar());
+    expect(page.showResults).toBe(true);
+    expect(page.tally?.castVotes).toBe(1);
+    expect(page.tally?.voteDetails).toBeUndefined();
+    expect(JSON.stringify(page)).not.toContain("Ada");
+    expect(JSON.stringify(page)).not.toContain("secret reason");
+    expect(page.voteCount).toBe(1);
+  });
+
+  test("hidden results stay out of the payload; drafts and unknown polls 404", async () => {
+    const db = storeFixture();
+    const draft = await createPoll();
+    await expect(resultsFor(draft.id)).rejects.toMatchObject({ status: 404 });
+    await expect(resultsFor("nope123456")).rejects.toMatchObject({ status: 404 });
+
+    const { id } = await createPoll({ hideResults: "after_close" });
+    await openPoll(id);
+    const options = db.getOptions(pid(db, id));
+    const voter = cookieJar();
+    await postJson(voteRoute, { id }, { voterName: "Ada", selected: [String(options[0]!.id)] }, voter);
+    const hidden = await resultsFor(id, voter);
+    expect(hidden.showResults).toBe(false);
+    expect(hidden.tally).toBeNull();
+    await closePoll(id);
+    expect((await resultsFor(id, cookieJar())).tally?.castVotes).toBe(1);
+
+    const afterVote = await createPoll({ hideResults: "after_vote" });
+    await openPoll(afterVote.id);
+    const stranger = cookieJar();
+    expect((await resultsFor(afterVote.id, stranger)).tally).toBeNull();
+    await postJson(voteRoute, { id: afterVote.id }, { voterName: "Bob", selected: [String(db.getOptions(pid(db, afterVote.id))[0]!.id)] }, stranger);
+    expect((await resultsFor(afterVote.id, stranger)).tally?.castVotes).toBe(1);
+  });
+});
+
+describe("link previews", () => {
+  test("meta carries only public poll fields, with an absolute origin url and image", async () => {
+    const db = storeFixture();
+    const { id, adminToken } = await createPoll({ title: "Movie night", details: "  Pick   a\nfilm  ", voterMode: "invite", inviteesText: "Ada" });
+    const poll = db.getPollBySlug(id)!;
+    const meta = pollMeta(poll, "https://polls.example");
+    expect(meta).toEqual({
+      title: "Movie night",
+      description: "Pick a film",
+      url: `https://polls.example/poll/${id}`,
+      image: "https://polls.example/og.png"
+    });
+    const invite = (await loadPoll(id)).invitations![0]!.link!;
+    const serialized = JSON.stringify(meta);
+    expect(serialized).not.toContain(adminToken);
+    expect(serialized).not.toContain("invite=");
+    expect(serialized).not.toContain("admin=");
+    expect(serialized).not.toContain(decodeURIComponent(invite.split("invite=")[1]!));
+    // No details: falls back to type and status; long details are shortened.
+    expect(pollMeta({ ...poll, details: "" }, "https://x.test").description).toBe("Choose \u00b7 Draft");
+    expect(pollMeta({ ...poll, details: "w ".repeat(300) }, "https://x.test").description.length).toBeLessThanOrEqual(200);
+    expect(pollMeta(poll, "https://x.test", `/poll/${id}/results`, "Results: ").title).toBe("Results: Movie night");
+  });
+
+  test("the generic preview image ships as a 1200x630 PNG", async () => {
+    const bytes = new Uint8Array(await Bun.file(new URL("../static/og.png", import.meta.url)).arrayBuffer());
+    expect([...bytes.slice(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
+    const view = new DataView(bytes.buffer);
+    expect([view.getUint32(16), view.getUint32(20)]).toEqual([1200, 630]);
+    expect(bytes.length).toBeLessThan(100_000);
+  });
+});
+

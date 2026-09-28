@@ -22,7 +22,8 @@ export function isProposalType(type: PollType): boolean {
   return (PROPOSAL_TYPES as readonly PollType[]).includes(type);
 }
 
-export type PollStatus = "draft" | "open" | "closed";
+/** "scheduled": a frozen draft that opens by itself at `opensAt`. */
+export type PollStatus = "draft" | "scheduled" | "open" | "closed";
 export type HideResults = "off" | "after_vote" | "after_close";
 export type ReasonMode = "optional" | "required" | "disabled";
 export type QuotaType = "droop" | "hare";

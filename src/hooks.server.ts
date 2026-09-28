@@ -27,7 +27,7 @@ export const handle: Handle = async ({ event, resolve }) => {
     } catch {
       // No resolvable address: share one bucket rather than skipping limits.
     }
-    const limited = enforceRateLimit(limiters, event.request, event.url.pathname, ip);
+    const limited = enforceRateLimit(limiters, event.request, event.url.pathname, ip, event.url.search);
     if (limited) return applySecurityHeaders(limited, isHttps);
   }
   const response = await resolve(event);

@@ -1,5 +1,5 @@
 import { error, fail, redirect } from "@sveltejs/kit";
-import { addInviteesOrThrow, adminCookieToken, ballotOptionsFor, canShowResults, closePollOrThrow, currentInvite, deletePollOrThrow, getStore, grantAdminFromUrl, grantInviteFromUrl, InviteRequiredError, invitationsFor, isPollAdmin, openPollOrThrow, publicTally, submitVote, tallyFor, voteTokenFor, voterNameFor } from "$lib/server/app";
+import { addInviteesOrThrow, adminCookieToken, ballotOptionsFor, canShowResults, closePollOrThrow, deletePollOrThrow, duplicatePollOrThrow, getStore, grantAdminFromUrl, grantInviteFromUrl, InviteRequiredError, invitationsFor, isPollAdmin, openPollOrThrow, publicTally, schedulePollOrThrow, submitVote, tallyFor, unschedulePollOrThrow, viewerContext } from "$lib/server/app";
 import { isOpen } from "$lib/shared";
 import type { Actions, PageServerLoad } from "./$types";
 
@@ -17,18 +17,17 @@ export const load = (({ params, url, cookies }) => {
   const adminToken = adminCookieToken(cookies, poll.id);
   const options = getStore().getOptions(poll.id);
   const votes = getStore().getVotes(poll.id);
-  const inviteMode = poll.config.voterMode === "invite";
   // In invite mode the viewer is whoever their invite cookie says, and the
   // invite token is the ballot's edit token.
-  const invite = inviteMode ? currentInvite(cookies, poll) : null;
-  const viewerName = invite ? invite.name : inviteMode ? "" : voterNameFor(cookies, poll.id);
-  const viewerVote = viewerName ? getStore().getVoteByName(poll.id, viewerName, invite ? invite.token : voteTokenFor(cookies, poll.id)) : null;
+  const { inviteMode, invite, viewerName, viewerVote } = viewerContext(poll, cookies);
   const showResults = canShowResults(poll, viewerVote);
+  // A scheduled poll shows visitors only when it opens; its ballot is for the admin's preview.
+  const hideBallot = poll.status === "scheduled" && !isAdmin;
   return {
     poll,
-    options,
+    options: hideBallot ? [] : options,
     /** Options in this viewer's ballot order (shuffled when the poll asks for it); results use `options`. */
-    ballotOptions: ballotOptionsFor(poll, options, cookies),
+    ballotOptions: hideBallot ? [] : ballotOptionsFor(poll, options, cookies),
     voteCount: votes.length,
     viewerName,
     viewerVote,
@@ -58,6 +57,31 @@ export const actions = {
       return fail(400, { error: error instanceof Error ? error.message : String(error) });
     }
     redirect(303, `/poll/${slug}`);
+  },
+  schedule: async ({ params, cookies }) => {
+    try {
+      schedulePollOrThrow(params.id, cookies);
+    } catch (error) {
+      return fail(400, { error: error instanceof Error ? error.message : String(error) });
+    }
+    redirect(303, `/poll/${params.id}`);
+  },
+  unschedule: async ({ params, cookies }) => {
+    try {
+      unschedulePollOrThrow(params.id, cookies);
+    } catch (error) {
+      return fail(400, { error: error instanceof Error ? error.message : String(error) });
+    }
+    redirect(303, `/poll/${params.id}`);
+  },
+  duplicate: async ({ params, cookies }) => {
+    let slug: string;
+    try {
+      slug = duplicatePollOrThrow(params.id, cookies).id;
+    } catch (error) {
+      return fail(400, { error: error instanceof Error ? error.message : String(error) });
+    }
+    redirect(303, `/poll/${slug}/edit`);
   },
   close: async ({ params, cookies }) => {
     let slug: string;

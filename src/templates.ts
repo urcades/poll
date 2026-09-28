@@ -12,6 +12,26 @@ export interface Template {
   defaultConfig: Partial<PollConfig>;
 }
 
+/**
+ * Three example slots relative to `now`: the next weekday at 10:00 and 14:00,
+ * then the weekday after at 10:00, in the runtime's local zone, as ISO UTC.
+ */
+export function defaultTimeSlots(now = new Date()): Array<{ label: string }> {
+  const slots: Array<{ label: string }> = [];
+  const hours = [10, 14, 10];
+  const day = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  while (slots.length < hours.length) {
+    if (slots.length === 0 || slots.length === 2) {
+      do {
+        day.setDate(day.getDate() + 1);
+      } while (day.getDay() === 0 || day.getDay() === 6);
+    }
+    const slot = new Date(day.getFullYear(), day.getMonth(), day.getDate(), hours[slots.length] ?? 10, 0);
+    slots.push({ label: slot.toISOString() });
+  }
+  return slots;
+}
+
 export const baseConfig: PollConfig = {
   anonymous: false,
   voterMode: "open",
@@ -233,11 +253,10 @@ export const templates: Template[] = [
       { label: "Loomio meeting poll docs", href: "https://help.loomio.com/en/user_manual/polls/meeting_polls/index.html" },
       { label: "Loomio poll docs", href: "https://help.loomio.com/en/user_manual/polls/proposal_types/" }
     ],
-    defaultOptions: [
-      { label: "2026-06-05 10:00" },
-      { label: "2026-06-05 14:00" },
-      { label: "2026-06-06 10:00" }
-    ],
+    // Generated on access so the examples are always upcoming.
+    get defaultOptions() {
+      return defaultTimeSlots();
+    },
     defaultConfig: { meetingDurationMinutes: 60 }
   }
 ];

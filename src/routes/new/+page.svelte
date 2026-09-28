@@ -17,4 +17,4 @@
   <p role="alert">{form.error}</p>
 {/if}
 
-<PollEditor selected={data.selected} values={data.values} submitLabel="Save draft" />
+<PollEditor selected={data.selected} values={data.values} submitLabel="Save draft" freshDefaults />

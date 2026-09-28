@@ -10,8 +10,9 @@ import type { PageServerLoad } from "./$types";
 export const load = (({ cookies }) => {
   const items = involvedPolls(cookies).map(({ poll, role }) => ({ poll, role }));
   return {
-    drafts: items.filter(({ poll }) => poll.status === "draft"),
-    active: items.filter(({ poll }) => poll.status !== "draft" && !isClosed(poll)),
-    closed: items.filter(({ poll }) => poll.status !== "draft" && isClosed(poll))
+    // Scheduled polls (only ever listed for their admin) sit with the drafts.
+    drafts: items.filter(({ poll }) => poll.status === "draft" || poll.status === "scheduled"),
+    active: items.filter(({ poll }) => poll.status === "open" && !isClosed(poll)),
+    closed: items.filter(({ poll }) => poll.status !== "draft" && poll.status !== "scheduled" && isClosed(poll))
   };
 }) satisfies PageServerLoad;

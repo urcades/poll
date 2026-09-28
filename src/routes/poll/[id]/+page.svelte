@@ -2,23 +2,27 @@
   import { resolve } from "$app/paths";
   import { enhance } from "$app/forms";
   import { invalidateAll } from "$app/navigation";
-  import { Button, Table, tableColumn, tableColumns } from "@flowercomputer/flowerparts";
+  import { page } from "$app/state";
+  import { Button } from "@flowercomputer/flowerparts";
   import AppPageHeader from "$lib/AppPageHeader.svelte";
+  import LocalTime from "$lib/LocalTime.svelte";
+  import MetaTags from "$lib/MetaTags.svelte";
+  import PollResults from "$lib/PollResults.svelte";
   import RankBallot from "$lib/RankBallot.svelte";
-  import ResultBars from "$lib/ResultBars.svelte";
-  import RoundChart from "$lib/RoundChart.svelte";
-  import { formatNumber } from "../../../tally";
   import { templateByType } from "../../../templates";
   import type { SubmitFunction } from "@sveltejs/kit";
   import { untrack } from "svelte";
   import type { PageProps } from "./$types";
-  import { isProposalType, type Option, type Poll, type PublicTallyResult, type Vote } from "../../../types";
+  import { isProposalType, type Option, type Poll, type Vote } from "../../../types";
   import { pendingForm } from "$lib/enhance.svelte";
-  import { isClosed, isOpen, resultCells, resultHeaders, roundTallies, statusLabel } from "$lib/shared";
+  import { isClosed, isOpen, parseSlot, pollMeta, statusLabel } from "$lib/shared";
 
   let { data, form }: PageProps = $props();
 
   const template = $derived(templateByType.get(data.poll.type));
+  const meta = $derived(pollMeta(data.poll, page.url.origin));
+  const minutes = $derived(data.poll.config.meetingDurationMinutes ?? 60);
+  const calendarReady = $derived(data.poll.type === "time_poll" && data.options.length > 0 && data.options.every((option) => parseSlot(option.label)));
 
   const voteForm = pendingForm();
   const adminForm = pendingForm();
@@ -57,7 +61,7 @@
   }
 
   $effect(() => {
-    if (data.poll.status === "draft" || isClosed(data.poll)) return;
+    if (data.poll.status === "draft" || isClosed(data.poll)) return; // scheduled polls keep probing so they refresh when they open
     const slug = data.poll.slug;
     const timer = setInterval(() => checkVersion(slug), 5000);
     const onVisible = () => {
@@ -108,6 +112,8 @@
   <title>{data.poll.title}</title>
 </svelte:head>
 
+<MetaTags {meta} noindex />
+
 <AppPageHeader title={data.poll.title} backHref={resolve("/")} backLabel="Back to home">
   {#snippet right()}
     {#if data.isAdmin}
@@ -131,14 +137,26 @@
   </section>
 {/if}
 
-{#if data.poll.status === "draft"}
-  <section>
-    <h2>Draft preview</h2>
-    <p class="hint">This is the voter-facing ballot preview. Voting is disabled until you open voting.</p>
-    <div inert aria-disabled="true">
-      {@render VoteForm({ poll: data.poll, options: data.ballotOptions, viewerName: "", viewerVote: null, inviteBallot: false })}
-    </div>
-  </section>
+{#if data.poll.status === "draft" || data.poll.status === "scheduled"}
+  {#if data.poll.status === "scheduled" && data.poll.opensAt}
+    <section>
+      <h2>Voting opens <LocalTime value={data.poll.opensAt} /></h2>
+      {#if data.isAdmin}
+        <p class="hint">This poll is scheduled and its setup is frozen. It opens by itself at that time; unschedule it to edit or open it sooner.</p>
+      {:else}
+        <p>The ballot appears here when voting opens. This page refreshes by itself.</p>
+      {/if}
+    </section>
+  {/if}
+  {#if data.poll.status === "draft" || data.isAdmin}
+    <section>
+      <h2>Draft preview</h2>
+      <p class="hint">This is the voter-facing ballot preview. Voting is disabled until {data.poll.status === "scheduled" ? "the poll opens" : "you open voting"}.</p>
+      <div inert aria-disabled="true">
+        {@render VoteForm({ poll: data.poll, options: data.ballotOptions, viewerName: "", viewerVote: null, inviteBallot: false })}
+      </div>
+    </section>
+  {/if}
   <section>
     <h2>Results</h2>
     <p>Results will appear after voting opens and votes are submitted.</p>
@@ -158,12 +176,19 @@
   </section>
   <section>
     <h2>Results</h2>
-    {#if data.showResults && data.tally}
-      {@render Results({ tally: data.tally, poll: data.poll })}
-    {:else if data.poll.config.hideResults === "after_vote"}
-      <p>Results are hidden until you vote. They appear here once this browser has voted.</p>
-    {:else}
-      <p>Results are hidden until this poll closes.</p>
+    <PollResults tally={data.showResults ? data.tally : null} poll={data.poll} />
+  </section>
+{/if}
+
+{#if isClosed(data.poll) && data.showResults}
+  <section>
+    <h2>Share</h2>
+    <p>
+      <a href={resolve("/poll/[id]/results", { id: data.poll.slug })}>Share results</a>
+      <span class="hint"> (a read-only page with just the outcome and charts)</span>
+    </p>
+    {#if calendarReady && data.tally?.rows[0] && (data.tally.rows[0].available ?? 0) + (data.tally.rows[0].ifNeeded ?? 0) > 0}
+      <p><a href={resolve("/poll/[id]/event.ics", { id: data.poll.slug })} download>Add the winning timeslot to your calendar (.ics)</a></p>
     {/if}
   </section>
 {/if}
@@ -220,9 +245,15 @@
     {#if poll.status === "draft"}
       <Button href={resolve("/poll/[id]/edit", { id: poll.slug })} variant="secondary">Edit draft</Button>
       <form method="post" action="?/open" use:enhance={adminForm.enhance}><Button type="submit" variant="primary" disabled={adminForm.pending}>Open voting</Button></form>
+      {#if poll.opensAt}
+        <form method="post" action="?/schedule" use:enhance={adminForm.enhance}><Button type="submit" variant="secondary" disabled={adminForm.pending}>Schedule</Button></form>
+      {/if}
+    {:else if poll.status === "scheduled"}
+      <form method="post" action="?/unschedule" use:enhance={adminForm.enhance}><Button type="submit" variant="secondary" disabled={adminForm.pending}>Unschedule</Button></form>
     {:else if !isClosed(poll)}
       <form method="post" action="?/close" use:enhance={adminForm.enhance}><Button type="submit" variant="secondary" disabled={adminForm.pending}>Close poll</Button></form>
     {/if}
+    <form method="post" action="?/duplicate" use:enhance={adminForm.enhance}><Button type="submit" variant="secondary" disabled={adminForm.pending}>Duplicate</Button></form>
     <form method="post" action="?/delete" use:enhance={confirmedDelete}><Button type="submit" variant="secondary" disabled={adminForm.pending}>Delete</Button></form>
   </div>
 {/snippet}
@@ -289,7 +320,8 @@
         {#each options as option (option.id)}
           {@const current = String(currentAvailability[String(option.id)] ?? "unavailable")}
           <div class="row">
-            <strong>{option.label}</strong>
+            <strong><LocalTime value={option.label} {minutes} /></strong>
+            {#if option.meaning}<span class="hint">{option.meaning}</span>{/if}
             {#each ["available", "if_needed", "unavailable"] as state (state)}
               <label><input type="radio" name={`availability_${option.id}`} value={state} checked={current === state} required /> {state.replace("_", " ")}</label>
             {/each}
@@ -307,75 +339,4 @@
 
     <Button type="submit" variant="primary" disabled={voteForm.pending}>{viewerVote ? "Update vote" : "Submit vote"}</Button>
   </form>
-{/snippet}
-
-{#snippet Results({ tally, poll }: { tally: PublicTallyResult; poll: Poll })}
-  <p><strong>{tally.outcome}</strong></p>
-  <p>{tally.quorumText}{tally.quorumMet === null ? "" : tally.quorumMet ? " · quorum met" : " · quorum not met"}</p>
-  {#if tally.quota}
-    <p>Quota: {formatNumber(tally.quota)}</p>
-  {/if}
-  <ResultBars {tally} {poll} />
-  <Table
-    label="Poll results"
-    items={tally.rows}
-    columns={tableColumns(...resultHeaders(tally).map(() => tableColumn.fill(1, "8rem")))}
-    getKey={(row) => row.optionId}
-    stickyHeader={false}
-  >
-    {#snippet header()}
-        {#each resultHeaders(tally) as header (header)}
-          <span role="columnheader">{header}</span>
-        {/each}
-    {/snippet}
-
-    {#snippet row(resultRow)}
-      {#each resultCells(tally, resultRow) as cell, index (index)}
-        <span role="cell">{cell}</span>
-      {/each}
-    {/snippet}
-  </Table>
-  {#if tally.roundLogs?.length}
-    {#if tally.type === "irv" || tally.type === "stv"}
-      <details open>
-        <summary>Round by round</summary>
-        <RoundChart {tally} />
-      </details>
-    {/if}
-    <details>
-      <summary>Round log</summary>
-      <Table
-        label="Round log"
-        items={tally.roundLogs}
-        columns={tableColumns(tableColumn.fit(), tableColumn.fit(), tableColumn.fill(1, "12rem"), tableColumn.fill(1, "12rem"))}
-        getKey={(log, index) => `${index}-${log.round}-${log.action}`}
-        minWidth="42rem"
-        stickyHeader={false}
-      >
-        {#snippet header()}
-          <span role="columnheader">Round</span>
-          <span role="columnheader">Action</span>
-          <span role="columnheader">Tallies</span>
-          <span role="columnheader">Note</span>
-        {/snippet}
-
-        {#snippet row(log)}
-          <span role="cell">{log.round}</span>
-          <span role="cell">{log.action}</span>
-          <span role="cell">{roundTallies(log)}</span>
-          <span role="cell">{log.note ?? ""}</span>
-        {/snippet}
-      </Table>
-    </details>
-  {/if}
-  {#if !poll.config.anonymous && poll.config.reasonMode !== "disabled" && tally.voteDetails?.length}
-    <details>
-      <summary>Vote reasons</summary>
-      <ul>
-        {#each tally.voteDetails as detail (detail.voterName)}
-          <li><strong>{detail.voterName}</strong>{detail.reason ? `: ${detail.reason}` : ""}</li>
-        {/each}
-      </ul>
-    </details>
-  {/if}
 {/snippet}

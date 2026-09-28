@@ -1,19 +1,30 @@
 <script lang="ts">
   import { resolve } from "$app/paths";
   import { Button } from "@flowercomputer/flowerparts";
+  import { page } from "$app/state";
   import AppPageHeader from "$lib/AppPageHeader.svelte";
+  import LocalTime from "$lib/LocalTime.svelte";
+  import MetaTags from "$lib/MetaTags.svelte";
   import { formatDate, labelForPoll, shorten, statusLabel } from "$lib/shared";
   import type { PageProps } from "./$types";
   import type { Poll } from "../types";
 
   type Item = { poll: Poll; role: "admin" | "voter" | "invitee" | null };
   let { data }: PageProps = $props();
+  const meta = $derived({
+    title: "Poll",
+    description: "Private votes and proposals, shared by link.",
+    url: `${page.url.origin}/`,
+    image: `${page.url.origin}/og.png`
+  });
   const isEmpty = $derived(data.drafts.length + data.active.length + data.closed.length === 0);
 </script>
 
 <svelte:head>
   <title>My votes</title>
 </svelte:head>
+
+<MetaTags {meta} />
 
 <AppPageHeader title="My votes">
   {#snippet right()}
@@ -51,7 +62,7 @@
       {#each items as { poll, role } (poll.id)}
         <article class="card">
           <h3><a href={resolve("/poll/[id]", { id: poll.slug })}>{poll.title}</a></h3>
-          <p>{labelForPoll(poll)} · {statusLabel(poll)}{role === "admin" ? " · created by you" : role === "voter" ? " · you voted" : role === "invitee" ? " · you are invited" : ""}</p>
+          <p>{labelForPoll(poll)} · {#if poll.status === "scheduled" && poll.opensAt}Scheduled for <LocalTime value={poll.opensAt} />{:else}{statusLabel(poll)}{/if}{role === "admin" ? " · created by you" : role === "voter" ? " · you voted" : role === "invitee" ? " · you are invited" : ""}</p>
           {#if poll.details}
             <p>{shorten(poll.details, 180)}</p>
           {/if}

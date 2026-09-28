@@ -92,11 +92,13 @@ export function loadRateLimitConfig(env: Record<string, string | undefined>): Ra
 }
 
 /** Which bucket (if any) a request counts against. */
-export function classifyRequest(method: string, pathname: string): Bucket | null {
+export function classifyRequest(method: string, pathname: string, search = ""): Bucket | null {
   const m = method.toUpperCase();
   if (m === "GET" || m === "HEAD" || m === "OPTIONS") return null;
   const path = pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname;
   if (path === "/api/polls" || path === "/new") return "create";
+  // Duplicating mints a new poll, so it shares the creation budget.
+  if (/^\/api\/polls\/[^/]+\/duplicate$/.test(path) || (/^\/poll\/[^/]+$/.test(path) && search === "?/duplicate")) return "create";
   return "mutate";
 }
 
@@ -133,9 +135,10 @@ export function enforceRateLimit(
   limiters: Record<Bucket, RateLimiter>,
   request: Request,
   pathname: string,
-  clientIp: string
+  clientIp: string,
+  search = ""
 ): Response | null {
-  const bucket = classifyRequest(request.method, pathname);
+  const bucket = classifyRequest(request.method, pathname, search);
   if (!bucket) return null;
   const result = limiters[bucket].check(clientIp);
   return result.allowed ? null : tooManyRequests(request, result.retryAfter);
