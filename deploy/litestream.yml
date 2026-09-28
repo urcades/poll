@@ -1,0 +1,7 @@
+# Continuous SQLite replication. Used only when LITESTREAM_REPLICA_URL is set
+# (for example s3://my-bucket/poll); credentials come from the standard
+# LITESTREAM_ACCESS_KEY_ID / LITESTREAM_SECRET_ACCESS_KEY env vars.
+dbs:
+  - path: ${DB_PATH}
+    replicas:
+      - url: ${LITESTREAM_REPLICA_URL}

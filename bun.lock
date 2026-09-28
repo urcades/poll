@@ -4,6 +4,9 @@
   "workspaces": {
     "": {
       "name": "minimal-loomio-voting",
+      "dependencies": {
+        "@flowercomputer/flowerparts": "^0.6.2",
+      },
       "devDependencies": {
         "@sveltejs/adapter-node": "^5.5.4",
         "@sveltejs/kit": "^2.63.0",
@@ -23,6 +26,8 @@
     "@emnapi/runtime": ["@emnapi/runtime@1.10.0", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-ewvYlk86xUoGI0zQRNq/mC+16R1QeDlKQy21Ki3oSYXNgLb45GV1P6A0M+/s6nyCuNDqe5VpaY84BzXGwVbwFA=="],
 
     "@emnapi/wasi-threads": ["@emnapi/wasi-threads@1.2.1", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-uTII7OYF+/Mes/MrcIOYp5yOtSMLBWSIoLPpcgwipoiKbli6k322tcoFsxoIIxPDqW01SQGAgko4EzZi2BNv2w=="],
+
+    "@flowercomputer/flowerparts": ["@flowercomputer/flowerparts@0.6.4", "", { "peerDependencies": { "svelte": "^5.0.0" } }, "sha512-XudEldscna/XdVINvakyl2VA5kfrspHkLFyaHGHGbyJpWdDNm94wY4ouFiZkY7yX92LO9Nnc87e/8Voj1BwJAQ=="],
 
     "@jridgewell/gen-mapping": ["@jridgewell/gen-mapping@0.3.13", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.0", "@jridgewell/trace-mapping": "^0.3.24" } }, "sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA=="],
 

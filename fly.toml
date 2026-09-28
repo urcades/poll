@@ -4,6 +4,9 @@
 #   fly deploy
 # Keep this at exactly one machine: SQLite lives on the volume.
 #   fly scale count 1
+# Optional continuous backups with Litestream (see deploy/):
+#   fly secrets set LITESTREAM_REPLICA_URL=s3://bucket/poll \
+#     LITESTREAM_ACCESS_KEY_ID=... LITESTREAM_SECRET_ACCESS_KEY=...
 
 app = "poll"
 primary_region = "ewr"
