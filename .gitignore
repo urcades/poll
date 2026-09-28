@@ -13,3 +13,6 @@ outputs/
 *.log
 .env
 .env.*
+
+# macOS
+.DS_Store
