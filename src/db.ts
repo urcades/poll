@@ -1,3 +1,4 @@
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname } from "node:path";
@@ -71,6 +72,7 @@ function createNodeDatabase(path: string): SqliteDatabase {
 
 interface PollRow {
   id: number;
+  slug: string;
   type: PollType;
   title: string;
   details: string;
@@ -81,7 +83,7 @@ interface PollRow {
   manually_closed_at: string | null;
   opened_at: string | null;
   closed_at: string | null;
-  admin_token: string;
+  admin_token_hash: string;
   created_at: string;
 }
 
@@ -99,8 +101,37 @@ interface VoteRow {
   voter_name: string;
   ballot_json: string;
   reason: string;
-  edit_token: string;
+  edit_token_hash: string;
   updated_at: string;
+}
+
+const SLUG_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+export const SLUG_LENGTH = 10;
+
+/** Random URL-safe public poll id: 10 base62 chars (~59 bits), rejection-sampled so it is unbiased. */
+export function generateSlug(): string {
+  let slug = "";
+  while (slug.length < SLUG_LENGTH) {
+    for (const byte of randomBytes(SLUG_LENGTH * 2)) {
+      if (byte >= 248) continue; // 248 = 62 * 4, avoids modulo bias
+      slug += SLUG_ALPHABET[byte % 62];
+      if (slug.length === SLUG_LENGTH) break;
+    }
+  }
+  return slug;
+}
+
+/** Capability tokens are stored only as SHA-256 hex; cookies/URLs carry the plaintext. */
+export function hashToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+/** Constant-time check of a presented plaintext token against a stored hash. Empty stored hash never matches. */
+export function tokenMatches(storedHash: string, presented: string): boolean {
+  if (!storedHash || !presented) return false;
+  const a = Buffer.from(hashToken(presented));
+  const b = Buffer.from(storedHash);
+  return a.length === b.length && timingSafeEqual(a, b);
 }
 
 export interface CreatePollInput {
@@ -111,12 +142,135 @@ export interface CreatePollInput {
   opensAt: string | null;
   closesAt: string | null;
   options: Array<{ label: string; meaning: string }>;
+  /** Plaintext admin token; only its hash is stored. */
   adminToken?: string;
 }
 
 export interface UpdatePollInput extends CreatePollInput {
   id: number;
 }
+
+interface Migration {
+  version: number;
+  up(db: SqliteDatabase): void;
+}
+
+function columnNames(db: SqliteDatabase, table: string): Set<string> {
+  return new Set((db.query(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((column) => column.name));
+}
+
+// Ordered, append-only. Each runs in its own transaction and is recorded in
+// PRAGMA user_version. Never edit a shipped migration; add a new one.
+const MIGRATIONS: Migration[] = [
+  {
+    // Baseline: takes a fresh DB or any pre-versioning DB (which may lack the
+    // status/opened_at/closed_at/admin_token/edit_token columns) to the schema
+    // as it stood before slugs and hashed tokens. Idempotent.
+    version: 1,
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS polls (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          type TEXT NOT NULL,
+          title TEXT NOT NULL,
+          details TEXT NOT NULL DEFAULT '',
+          config_json TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'open',
+          opens_at TEXT,
+          closes_at TEXT,
+          manually_closed_at TEXT,
+          opened_at TEXT,
+          closed_at TEXT,
+          admin_token TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS options (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          poll_id INTEGER NOT NULL REFERENCES polls(id) ON DELETE CASCADE,
+          label TEXT NOT NULL,
+          meaning TEXT NOT NULL DEFAULT '',
+          sort_order INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS votes (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          poll_id INTEGER NOT NULL REFERENCES polls(id) ON DELETE CASCADE,
+          voter_name TEXT NOT NULL,
+          ballot_json TEXT NOT NULL,
+          reason TEXT NOT NULL DEFAULT '',
+          edit_token TEXT NOT NULL DEFAULT '',
+          updated_at TEXT NOT NULL,
+          UNIQUE(poll_id, voter_name)
+        );
+      `);
+      const columns = columnNames(db, "polls");
+      if (!columns.has("status")) db.run("ALTER TABLE polls ADD COLUMN status TEXT NOT NULL DEFAULT 'open'");
+      if (!columns.has("opened_at")) db.run("ALTER TABLE polls ADD COLUMN opened_at TEXT");
+      if (!columns.has("closed_at")) db.run("ALTER TABLE polls ADD COLUMN closed_at TEXT");
+      if (!columns.has("admin_token")) db.run("ALTER TABLE polls ADD COLUMN admin_token TEXT NOT NULL DEFAULT ''");
+      if (!columnNames(db, "votes").has("edit_token")) db.run("ALTER TABLE votes ADD COLUMN edit_token TEXT NOT NULL DEFAULT ''");
+    }
+  },
+  {
+    // Public slugs. SQLite cannot add a NOT NULL UNIQUE column in place, so
+    // rebuild polls (the documented 12-step recipe; foreign keys are off).
+    version: 2,
+    up(db) {
+      const seq = db.query("SELECT seq FROM sqlite_sequence WHERE name = 'polls'").get() as { seq: number } | null;
+      db.exec(`
+        CREATE TABLE polls_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          slug TEXT NOT NULL UNIQUE,
+          type TEXT NOT NULL,
+          title TEXT NOT NULL,
+          details TEXT NOT NULL DEFAULT '',
+          config_json TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'open',
+          opens_at TEXT,
+          closes_at TEXT,
+          manually_closed_at TEXT,
+          opened_at TEXT,
+          closed_at TEXT,
+          admin_token TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL
+        );
+      `);
+      const insert = db.query(`
+        INSERT INTO polls_new (id, slug, type, title, details, config_json, status, opens_at, closes_at, manually_closed_at, opened_at, closed_at, admin_token, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      const used = new Set<string>();
+      for (const row of db.query("SELECT * FROM polls ORDER BY id").all() as Array<Record<string, unknown>>) {
+        let slug = generateSlug();
+        while (used.has(slug)) slug = generateSlug();
+        used.add(slug);
+        insert.run(row.id, slug, row.type, row.title, row.details, row.config_json, row.status, row.opens_at, row.closes_at, row.manually_closed_at, row.opened_at, row.closed_at, row.admin_token, row.created_at);
+      }
+      db.exec("DROP TABLE polls; ALTER TABLE polls_new RENAME TO polls;");
+      // Keep AUTOINCREMENT high-water mark so deleted poll ids are never reused.
+      if (seq) {
+        db.query("DELETE FROM sqlite_sequence WHERE name = 'polls'").run();
+        db.query("INSERT INTO sqlite_sequence (name, seq) VALUES ('polls', ?)").run(seq.seq);
+      }
+    }
+  },
+  {
+    // Hash capability tokens at rest. Existing plaintext cookies keep working
+    // because comparison hashes the presented value. Empty stays empty (legacy).
+    version: 3,
+    up(db) {
+      db.exec("ALTER TABLE polls RENAME COLUMN admin_token TO admin_token_hash");
+      db.exec("ALTER TABLE votes RENAME COLUMN edit_token TO edit_token_hash");
+      for (const row of db.query("SELECT id, admin_token_hash AS token FROM polls WHERE admin_token_hash != ''").all() as Array<{ id: number; token: string }>) {
+        db.query("UPDATE polls SET admin_token_hash = ? WHERE id = ?").run(hashToken(row.token), row.id);
+      }
+      for (const row of db.query("SELECT id, edit_token_hash AS token FROM votes WHERE edit_token_hash != ''").all() as Array<{ id: number; token: string }>) {
+        db.query("UPDATE votes SET edit_token_hash = ? WHERE id = ?").run(hashToken(row.token), row.id);
+      }
+    }
+  }
+];
 
 export class Store {
   db: SqliteDatabase;
@@ -137,51 +291,23 @@ export class Store {
   }
 
   migrate() {
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS polls (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        type TEXT NOT NULL,
-        title TEXT NOT NULL,
-        details TEXT NOT NULL DEFAULT '',
-        config_json TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'open',
-        opens_at TEXT,
-        closes_at TEXT,
-        manually_closed_at TEXT,
-        opened_at TEXT,
-        closed_at TEXT,
-        admin_token TEXT NOT NULL DEFAULT '',
-        created_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS options (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        poll_id INTEGER NOT NULL REFERENCES polls(id) ON DELETE CASCADE,
-        label TEXT NOT NULL,
-        meaning TEXT NOT NULL DEFAULT '',
-        sort_order INTEGER NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS votes (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        poll_id INTEGER NOT NULL REFERENCES polls(id) ON DELETE CASCADE,
-        voter_name TEXT NOT NULL,
-        ballot_json TEXT NOT NULL,
-        reason TEXT NOT NULL DEFAULT '',
-        edit_token TEXT NOT NULL DEFAULT '',
-        updated_at TEXT NOT NULL,
-        UNIQUE(poll_id, voter_name)
-      );
-    `);
-
-    const columns = new Set((this.db.query("PRAGMA table_info(polls)").all() as Array<{ name: string }>).map((column) => column.name));
-    if (!columns.has("status")) this.db.run("ALTER TABLE polls ADD COLUMN status TEXT NOT NULL DEFAULT 'open'");
-    if (!columns.has("opened_at")) this.db.run("ALTER TABLE polls ADD COLUMN opened_at TEXT");
-    if (!columns.has("closed_at")) this.db.run("ALTER TABLE polls ADD COLUMN closed_at TEXT");
-    if (!columns.has("admin_token")) this.db.run("ALTER TABLE polls ADD COLUMN admin_token TEXT NOT NULL DEFAULT ''");
-
-    const voteColumns = new Set((this.db.query("PRAGMA table_info(votes)").all() as Array<{ name: string }>).map((column) => column.name));
-    if (!voteColumns.has("edit_token")) this.db.run("ALTER TABLE votes ADD COLUMN edit_token TEXT NOT NULL DEFAULT ''");
+    // Table rebuilds (migration 2) need foreign keys off; that pragma is a
+    // no-op inside a transaction, so toggle it around the whole run.
+    this.db.run("PRAGMA foreign_keys = OFF");
+    try {
+      const current = (this.db.query("PRAGMA user_version").get() as { user_version: number }).user_version;
+      for (const migration of MIGRATIONS) {
+        if (migration.version <= current) continue;
+        this.db.transaction(() => {
+          migration.up(this.db);
+          this.db.exec(`PRAGMA user_version = ${migration.version}`);
+          const violations = this.db.query("PRAGMA foreign_key_check").all();
+          if (violations.length) throw new Error(`Migration ${migration.version} left foreign key violations.`);
+        })();
+      }
+    } finally {
+      this.db.run("PRAGMA foreign_keys = ON");
+    }
 
     this.sweepScheduledCloses();
     this.db.query("UPDATE polls SET opened_at = COALESCE(opened_at, created_at) WHERE status = 'open'").run();
@@ -217,6 +343,12 @@ export class Store {
     return row ? mapPoll(row) : null;
   }
 
+  getPollBySlug(slug: string): Poll | null {
+    this.sweepScheduledCloses();
+    const row = this.db.query("SELECT * FROM polls WHERE slug = ?").get(slug) as PollRow | null;
+    return row ? mapPoll(row) : null;
+  }
+
   getOptions(pollId: number): Option[] {
     return (this.db.query("SELECT * FROM options WHERE poll_id = ? ORDER BY sort_order, id").all(pollId) as OptionRow[]).map(mapOption);
   }
@@ -230,33 +362,43 @@ export class Store {
     if (!row) return null;
     // Votes claimed with an edit token are only visible to the holder; legacy
     // rows without a token stay name-addressable.
-    if (row.edit_token && row.edit_token !== editToken) return null;
+    if (row.edit_token_hash && !tokenMatches(row.edit_token_hash, editToken)) return null;
     return mapVote(row);
   }
 
-  createPoll(input: CreatePollInput): number {
+  createPoll(input: CreatePollInput): { id: number; slug: string } {
     const now = new Date().toISOString();
-    const tx = this.db.transaction(() => {
-      const insert = this.db.query(`
-        INSERT INTO polls (type, title, details, config_json, status, opens_at, closes_at, manually_closed_at, opened_at, closed_at, admin_token, created_at)
-        VALUES (?, ?, ?, ?, 'draft', ?, ?, NULL, NULL, NULL, ?, ?)
-      `);
-      const result = insert.run(
-        input.type,
-        input.title,
-        input.details,
-        JSON.stringify(input.config),
-        input.opensAt,
-        input.closesAt,
-        input.adminToken ?? "",
-        now
-      );
-      const pollId = Number(result.lastInsertRowid);
-      const optionInsert = this.db.query("INSERT INTO options (poll_id, label, meaning, sort_order) VALUES (?, ?, ?, ?)");
-      input.options.forEach((option, index) => optionInsert.run(pollId, option.label, option.meaning, index));
-      return pollId;
-    });
-    return tx();
+    const adminHash = input.adminToken ? hashToken(input.adminToken) : "";
+    for (let attempt = 0; ; attempt++) {
+      const slug = generateSlug();
+      try {
+        return this.db.transaction(() => {
+          const insert = this.db.query(`
+            INSERT INTO polls (slug, type, title, details, config_json, status, opens_at, closes_at, manually_closed_at, opened_at, closed_at, admin_token_hash, created_at)
+            VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, NULL, NULL, NULL, ?, ?)
+          `);
+          const result = insert.run(
+            slug,
+            input.type,
+            input.title,
+            input.details,
+            JSON.stringify(input.config),
+            input.opensAt,
+            input.closesAt,
+            adminHash,
+            now
+          );
+          const pollId = Number(result.lastInsertRowid);
+          const optionInsert = this.db.query("INSERT INTO options (poll_id, label, meaning, sort_order) VALUES (?, ?, ?, ?)");
+          input.options.forEach((option, index) => optionInsert.run(pollId, option.label, option.meaning, index));
+          return { id: pollId, slug };
+        })();
+      } catch (error) {
+        // Astronomically unlikely slug collision: retry with a fresh slug.
+        if (attempt < 5 && String(error).includes("UNIQUE") && String(error).includes("slug")) continue;
+        throw error;
+      }
+    }
   }
 
   updatePoll(input: UpdatePollInput): boolean {
@@ -283,11 +425,17 @@ export class Store {
     return tx();
   }
 
-  // Deliberately not part of mapPoll/Poll: the poll object is serialized into
-  // client page data, and the admin token must never travel with it.
-  getPollAdminToken(pollId: number): string {
-    const row = this.db.query("SELECT admin_token FROM polls WHERE id = ?").get(pollId) as { admin_token: string } | null;
-    return row?.admin_token ?? "";
+  /** True if `token` is this poll's admin token. Only hashes are stored; legacy polls (empty hash) never match. */
+  verifyAdminToken(pollId: number, token: string): boolean {
+    const row = this.db.query("SELECT admin_token_hash FROM polls WHERE id = ?").get(pollId) as { admin_token_hash: string } | null;
+    return tokenMatches(row?.admin_token_hash ?? "", token);
+  }
+
+  /** True if `token` is the edit token of any vote in this poll. */
+  hasVoteToken(pollId: number, token: string): boolean {
+    if (!token) return false;
+    const rows = this.db.query("SELECT edit_token_hash FROM votes WHERE poll_id = ? AND edit_token_hash != ''").all(pollId) as Array<{ edit_token_hash: string }>;
+    return rows.some((row) => tokenMatches(row.edit_token_hash, token));
   }
 
   openPoll(pollId: number): boolean {
@@ -298,16 +446,16 @@ export class Store {
   upsertVote(pollId: number, voterName: string, ballot: unknown, reason: string, editToken = "") {
     const name = voterName.trim();
     const tx = this.db.transaction(() => {
-      const existing = this.db.query("SELECT edit_token FROM votes WHERE poll_id = ? AND voter_name = ?").get(pollId, name) as { edit_token: string } | null;
-      if (existing && existing.edit_token && existing.edit_token !== editToken) {
+      const existing = this.db.query("SELECT edit_token_hash FROM votes WHERE poll_id = ? AND voter_name = ?").get(pollId, name) as { edit_token_hash: string } | null;
+      if (existing && existing.edit_token_hash && !tokenMatches(existing.edit_token_hash, editToken)) {
         throw new Error("This display name has already voted from another device. Pick a different name, or vote from the original device to update the ballot.");
       }
       this.db.query(`
-        INSERT INTO votes (poll_id, voter_name, ballot_json, reason, edit_token, updated_at)
+        INSERT INTO votes (poll_id, voter_name, ballot_json, reason, edit_token_hash, updated_at)
         VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(poll_id, voter_name)
-        DO UPDATE SET ballot_json = excluded.ballot_json, reason = excluded.reason, edit_token = excluded.edit_token, updated_at = excluded.updated_at
-      `).run(pollId, name, JSON.stringify(ballot), reason, editToken, new Date().toISOString());
+        DO UPDATE SET ballot_json = excluded.ballot_json, reason = excluded.reason, edit_token_hash = excluded.edit_token_hash, updated_at = excluded.updated_at
+      `).run(pollId, name, JSON.stringify(ballot), reason, editToken ? hashToken(editToken) : "", new Date().toISOString());
     });
     tx();
   }
@@ -326,6 +474,7 @@ export class Store {
 function mapPoll(row: PollRow): Poll {
   return {
     id: row.id,
+    slug: row.slug,
     type: row.type,
     title: row.title,
     details: row.details,

@@ -5,43 +5,52 @@
   import { formatDate, labelForPoll, shorten, statusLabel } from "$lib/shared";
   import type { Poll } from "../types";
 
-  let { data }: { data: { drafts: Poll[]; active: Poll[]; closed: Poll[] } } = $props();
+  type Item = { poll: Poll; role: "admin" | "voter" | null };
+  let { data }: { data: { drafts: Item[]; active: Item[]; closed: Item[] } } = $props();
+  const isEmpty = $derived(data.drafts.length + data.active.length + data.closed.length === 0);
 </script>
 
 <svelte:head>
-  <title>Votes</title>
+  <title>My votes</title>
 </svelte:head>
 
-<AppPageHeader title="Votes">
+<AppPageHeader title="My votes">
   {#snippet right()}
     <Button href={resolve("/new")} variant="primary">New vote/proposal</Button>
   {/snippet}
 </AppPageHeader>
 
+{#if isEmpty}
+  <section>
+    <p>Polls you create or vote in show up here.</p>
+    <p class="hint">Polls are not listed publicly. To vote in someone else's poll, open the link they shared with you.</p>
+  </section>
+{:else}
 <section>
   <h2>Drafts</h2>
-  {@render PollList({ polls: data.drafts })}
+  {@render PollList({ items: data.drafts })}
 </section>
 
 <section>
   <h2>Active votes</h2>
-  {@render PollList({ polls: data.active })}
+  {@render PollList({ items: data.active })}
 </section>
 
 <section>
   <h2>Closed votes</h2>
-  {@render PollList({ polls: data.closed })}
+  {@render PollList({ items: data.closed })}
 </section>
+{/if}
 
-{#snippet PollList({ polls }: { polls: Poll[] })}
-  {#if polls.length === 0}
-    <p>No polls here yet.</p>
+{#snippet PollList({ items }: { items: Item[] })}
+  {#if items.length === 0}
+    <p>None yet.</p>
   {:else}
     <div class="grid">
-      {#each polls as poll (poll.id)}
+      {#each items as { poll, role } (poll.id)}
         <article class="card">
-          <h3><a href={resolve("/poll/[id]", { id: String(poll.id) })}>{poll.title}</a></h3>
-          <p>{labelForPoll(poll)} · {statusLabel(poll)}</p>
+          <h3><a href={resolve("/poll/[id]", { id: poll.slug })}>{poll.title}</a></h3>
+          <p>{labelForPoll(poll)} · {statusLabel(poll)}{role === "admin" ? " · created by you" : role === "voter" ? " · you voted" : ""}</p>
           {#if poll.details}
             <p>{shorten(poll.details, 180)}</p>
           {/if}

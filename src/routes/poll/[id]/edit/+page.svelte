@@ -28,7 +28,7 @@
   <title>Edit {data.poll.title}</title>
 </svelte:head>
 
-<AppPageHeader title="Edit draft" backHref={resolve("/poll/[id]", { id: String(data.poll.id) })} backLabel="Back to preview" />
+<AppPageHeader title="Edit draft" backHref={resolve("/poll/[id]", { id: data.poll.slug })} backLabel="Back to preview" />
 
 {#if form?.error}
   <p>{form.error}</p>

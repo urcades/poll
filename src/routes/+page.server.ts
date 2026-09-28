@@ -1,12 +1,16 @@
-import { getStore, isPollAdmin } from "$lib/server/app";
+import { involvedPolls } from "$lib/server/app";
 import { isClosed } from "$lib/shared";
 
+/**
+ * "My polls": only polls this browser holds a capability cookie for (admin or
+ * vote token). A poll is otherwise shared purely by its link. The instance
+ * operator sees everything.
+ */
 export function load({ cookies }) {
-  const polls = getStore().listPolls();
+  const items = involvedPolls(cookies).map(({ poll, role }) => ({ poll, role }));
   return {
-    // Drafts are private to their admin; everyone sees open/closed polls.
-    drafts: polls.filter((poll) => poll.status === "draft" && isPollAdmin(cookies, poll.id)),
-    active: polls.filter((poll) => poll.status !== "draft" && !isClosed(poll)),
-    closed: polls.filter((poll) => poll.status !== "draft" && isClosed(poll))
+    drafts: items.filter(({ poll }) => poll.status === "draft"),
+    active: items.filter(({ poll }) => poll.status !== "draft" && !isClosed(poll)),
+    closed: items.filter(({ poll }) => poll.status !== "draft" && isClosed(poll))
   };
 }

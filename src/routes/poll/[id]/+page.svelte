@@ -5,7 +5,7 @@
   import AppPageHeader from "$lib/AppPageHeader.svelte";
   import { formatNumber } from "../../../tally";
   import { templateByType } from "../../../templates";
-  import type { Option, Poll, TallyResult, Vote } from "../../../types";
+  import type { Option, Poll, PublicTallyResult, Vote } from "../../../types";
   import { isClosed, isOpen, resultCells, resultHeaders, roundTallies, statusLabel } from "$lib/shared";
 
   let {
@@ -18,7 +18,7 @@
       voteCount: number;
       viewerName: string;
       viewerVote: Vote | null;
-      tally: TallyResult | null;
+      tally: PublicTallyResult | null;
       showResults: boolean;
       isAdmin: boolean;
       adminLink: string | null;
@@ -107,8 +107,8 @@
   <section>
     <h2>Export</h2>
     <p>
-      <a href={resolve("/poll/[id]/export.json", { id: String(data.poll.id) })}>Export JSON</a> ·
-      <a href={resolve("/poll/[id]/export.csv", { id: String(data.poll.id) })}>Export CSV</a>
+      <a href={resolve("/poll/[id]/export.json", { id: data.poll.slug })}>Export JSON</a> ·
+      <a href={resolve("/poll/[id]/export.csv", { id: data.poll.slug })}>Export CSV</a>
     </p>
   </section>
 {/if}
@@ -124,7 +124,7 @@
 {#snippet PollActions({ poll }: { poll: Poll })}
   <div class="actions">
     {#if poll.status === "draft"}
-      <Button href={resolve("/poll/[id]/edit", { id: String(poll.id) })} variant="secondary">Edit draft</Button>
+      <Button href={resolve("/poll/[id]/edit", { id: poll.slug })} variant="secondary">Edit draft</Button>
       <form method="post" action="?/open"><Button type="submit" variant="primary">Open voting</Button></form>
     {:else if !isClosed(poll)}
       <form method="post" action="?/close"><Button type="submit" variant="secondary">Close poll</Button></form>
@@ -222,7 +222,7 @@
   </form>
 {/snippet}
 
-{#snippet Results({ tally, poll }: { tally: TallyResult; poll: Poll })}
+{#snippet Results({ tally, poll }: { tally: PublicTallyResult; poll: Poll })}
   <p><strong>{tally.outcome}</strong></p>
   <p>{tally.quorumText}{tally.quorumMet === null ? "" : tally.quorumMet ? " · quorum met" : " · quorum not met"}</p>
   {#if tally.quota}

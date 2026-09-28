@@ -2,7 +2,7 @@ import { csvCell, exportVotes, getStore, isPollAdmin } from "$lib/server/app";
 import { isClosed } from "$lib/shared";
 
 export function GET({ params, url, cookies }) {
-  const poll = getStore().getPoll(Number(params.id));
+  const poll = getStore().getPollBySlug(params.id);
   if (!poll) return text("Poll not found.", 404);
   if (!isPollAdmin(cookies, poll.id, url.searchParams.get("admin") ?? "")) return text("Only the poll admin can export results.", 403);
   if (!isClosed(poll)) return text("Exports are available only after this poll closes.", 400);
@@ -11,7 +11,7 @@ export function GET({ params, url, cookies }) {
   const csv = [
     header.join(","),
     ...rows.map((row) => [
-      poll.id,
+      poll.slug,
       poll.title,
       poll.type,
       row.voterName,
@@ -23,7 +23,7 @@ export function GET({ params, url, cookies }) {
   return new Response(csv, {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="poll-${poll.id}.csv"`
+      "Content-Disposition": `attachment; filename="poll-${poll.slug}.csv"`
     }
   });
 }

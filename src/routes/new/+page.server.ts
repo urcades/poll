@@ -20,14 +20,14 @@ export function load({ url }) {
 
 export const actions = {
   default: async ({ request, cookies }) => {
-    let pollId: number;
+    let slug: string;
     try {
       const input = await inputFromRequest(request);
-      pollId = createPollWithAdmin(input, cookies).id;
+      slug = createPollWithAdmin(input, cookies).id;
     } catch (error) {
       return fail(400, { error: error instanceof Error ? error.message : String(error) });
     }
-    redirect(303, `/poll/${pollId}`);
+    redirect(303, `/poll/${slug}`);
   }
 };
 

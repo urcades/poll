@@ -3,7 +3,7 @@ import { getStore, recordVote, voteInputFromRequest } from "$lib/server/app";
 import { isOpen } from "$lib/shared";
 
 export async function POST({ params, request, cookies }) {
-  const poll = getStore().getPoll(Number(params.id));
+  const poll = getStore().getPollBySlug(params.id);
   if (!poll) return json({ error: "Poll not found." }, { status: 404 });
   if (!isOpen(poll)) return json({ error: "Voting is not open." }, { status: 400 });
   const options = getStore().getOptions(poll.id);

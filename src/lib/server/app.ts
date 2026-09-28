@@ -1,8 +1,8 @@
 import { error, json, redirect, type Cookies } from "@sveltejs/kit";
-import { Store, type CreatePollInput } from "../../db";
+import { hashToken, Store, tokenMatches, type CreatePollInput } from "../../db";
 import { baseConfig, defaultConfigFor, templateByType } from "../../templates";
 import { tallyPoll, validateBallot } from "../../tally";
-import { POLL_TYPES, type Option, type Poll, type PollConfig, type PollType, type TallyResult, type Vote } from "../../types";
+import { POLL_TYPES, type Option, type Poll, type PollConfig, type PollType, type PublicTallyResult, type TallyResult, type Vote } from "../../types";
 import { isClosed, isOpen } from "../shared";
 
 let store: Store | null = null;
@@ -30,6 +30,17 @@ export function tallyFor(poll: Poll, options: Option[], votes: Vote[]): TallyRes
     closedTallyCache.set(poll.id, tally);
   }
   return tally;
+}
+
+/**
+ * Page-safe copy of a tally: the UI only needs voter names and reasons, so full
+ * ballots stay out of the payload. Copies rather than mutating the cached tally.
+ */
+export function publicTally(tally: TallyResult): PublicTallyResult {
+  const { voteDetails, ...rest } = tally;
+  return voteDetails
+    ? { ...rest, voteDetails: voteDetails.map((detail) => ({ voterName: detail.voterName, reason: detail.reason })) }
+    : rest;
 }
 
 export function canShowResults(poll: Poll, viewerVote: Vote | null): boolean {
@@ -112,7 +123,18 @@ function operatorToken(): string {
 export function isOperator(cookies: Cookies, urlToken = ""): boolean {
   const token = operatorToken();
   if (!token) return false;
-  return cookies.get(OPERATOR_COOKIE) === token || urlToken === token;
+  const hash = hashToken(token);
+  return tokenMatches(hash, cookies.get(OPERATOR_COOKIE) ?? "") || tokenMatches(hash, urlToken);
+}
+
+/**
+ * The plaintext admin token in this browser's cookie for the poll, if (and only
+ * if) it is valid. Used to rebuild the shareable admin link; the database only
+ * holds a hash, so this is the sole source of a usable credential.
+ */
+export function adminCookieToken(cookies: Cookies, pollId: number): string {
+  const value = cookies.get(adminTokenCookie(pollId)) ?? "";
+  return value && getStore().verifyAdminToken(pollId, value) ? value : "";
 }
 
 /**
@@ -122,30 +144,62 @@ export function isOperator(cookies: Cookies, urlToken = ""): boolean {
  */
 export function isPollAdmin(cookies: Cookies, pollId: number, urlToken = ""): boolean {
   if (isOperator(cookies, urlToken)) return true;
-  const token = getStore().getPollAdminToken(pollId);
-  if (!token) return false;
-  return cookies.get(adminTokenCookie(pollId)) === token || urlToken === token;
+  return Boolean(adminCookieToken(cookies, pollId)) || (Boolean(urlToken) && getStore().verifyAdminToken(pollId, urlToken));
 }
 
 /** Exchanges a `?admin=` URL token for a cookie; returns true if one was granted. */
 export function grantAdminFromUrl(cookies: Cookies, pollId: number, urlToken: string): boolean {
   if (!urlToken) return false;
-  if (urlToken === operatorToken()) {
+  const operator = operatorToken();
+  if (operator && tokenMatches(hashToken(operator), urlToken)) {
     cookies.set(OPERATOR_COOKIE, urlToken, TOKEN_COOKIE_OPTIONS);
     return true;
   }
-  if (urlToken === getStore().getPollAdminToken(pollId)) {
+  if (getStore().verifyAdminToken(pollId, urlToken)) {
     cookies.set(adminTokenCookie(pollId), urlToken, TOKEN_COOKIE_OPTIONS);
     return true;
   }
   return false;
 }
 
-export function createPollWithAdmin(input: CreatePollInput, cookies: Cookies): { id: number; adminToken: string } {
+/** Returns the public slug as `id`; the integer primary key never leaves the server. */
+export function createPollWithAdmin(input: CreatePollInput, cookies: Cookies): { id: string; adminToken: string } {
   const adminToken = crypto.randomUUID();
-  const id = getStore().createPoll({ ...input, adminToken });
+  const { id, slug } = getStore().createPoll({ ...input, adminToken });
   cookies.set(adminTokenCookie(id), adminToken, TOKEN_COOKIE_OPTIONS);
-  return { id, adminToken };
+  return { id: slug, adminToken };
+}
+
+export interface Involvement {
+  poll: Poll;
+  /** "admin": holds this poll's admin cookie; "voter": holds a vote token; null: operator-only visibility. */
+  role: "admin" | "voter" | null;
+}
+
+/**
+ * Polls this browser is involved with, discovered from its capability cookies
+ * (`poll_<id>_admin_token`, `poll_<id>_vote_token`). Every cookie is verified
+ * against the stored hash, so forged cookie names/values list nothing. The
+ * operator sees every poll.
+ */
+export function involvedPolls(cookies: Cookies): Involvement[] {
+  const db = getStore();
+  if (isOperator(cookies)) {
+    return db.listPolls().map((poll) => ({ poll, role: adminCookieToken(cookies, poll.id) ? "admin" : db.hasVoteToken(poll.id, voteTokenFor(cookies, poll.id)) ? "voter" : null }));
+  }
+  const ids = new Set<number>();
+  for (const { name } of cookies.getAll()) {
+    const match = /^poll_(\d+)_(?:admin|vote)_token$/.exec(name);
+    if (match) ids.add(Number(match[1]));
+  }
+  const result: Involvement[] = [];
+  for (const id of ids) {
+    const poll = db.getPoll(id);
+    if (!poll) continue;
+    if (adminCookieToken(cookies, id)) result.push({ poll, role: "admin" });
+    else if (poll.status !== "draft" && db.hasVoteToken(id, voteTokenFor(cookies, id))) result.push({ poll, role: "voter" });
+  }
+  return result.sort((a, b) => b.poll.createdAt.localeCompare(a.poll.createdAt));
 }
 
 export function requirePollAdmin(cookies: Cookies, pollId: number, urlToken = "") {
@@ -188,18 +242,18 @@ export function recordVote(poll: Poll, vote: { voterName: string; reason: string
   cookies.set(voterNameCookie(poll.id), encodeURIComponent(vote.voterName), TOKEN_COOKIE_OPTIONS);
 }
 
-export function openPollOrThrow(pollId: number, cookies: Cookies) {
+export function openPollOrThrow(slug: string, cookies: Cookies) {
   const db = getStore();
-  const poll = db.getPoll(pollId);
+  const poll = db.getPollBySlug(slug);
   if (!poll) throw new Error("Poll not found.");
   requirePollAdmin(cookies, poll.id);
   if (!db.openPoll(poll.id)) throw new Error("Only draft polls can be opened.");
   return poll;
 }
 
-export function closePollOrThrow(pollId: number, cookies: Cookies) {
+export function closePollOrThrow(slug: string, cookies: Cookies) {
   const db = getStore();
-  const poll = db.getPoll(pollId);
+  const poll = db.getPollBySlug(slug);
   if (!poll) throw new Error("Poll not found.");
   requirePollAdmin(cookies, poll.id);
   if (poll.status === "draft") throw new Error("Open the draft before closing it.");
@@ -207,9 +261,9 @@ export function closePollOrThrow(pollId: number, cookies: Cookies) {
   return poll;
 }
 
-export function deletePollOrThrow(pollId: number, cookies: Cookies) {
+export function deletePollOrThrow(slug: string, cookies: Cookies) {
   const db = getStore();
-  const poll = db.getPoll(pollId);
+  const poll = db.getPollBySlug(slug);
   if (!poll) throw new Error("Poll not found.");
   requirePollAdmin(cookies, poll.id);
   db.deletePoll(poll.id);
@@ -254,8 +308,8 @@ export function csvCell(value: unknown): string {
   return `"${text.replaceAll('"', '""')}"`;
 }
 
-export function ensurePoll(id: number): Poll {
-  const poll = getStore().getPoll(id);
+export function ensurePoll(slug: string): Poll {
+  const poll = getStore().getPollBySlug(slug);
   if (!poll) error(404, "Poll not found.");
   return poll;
 }

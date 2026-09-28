@@ -3,7 +3,7 @@ import { exportVotes, getStore, isPollAdmin, tallyFor } from "$lib/server/app";
 import { isClosed } from "$lib/shared";
 
 export function GET({ params, url, cookies }) {
-  const poll = getStore().getPoll(Number(params.id));
+  const poll = getStore().getPollBySlug(params.id);
   if (!poll) return json({ error: "Poll not found." }, { status: 404 });
   if (!isPollAdmin(cookies, poll.id, url.searchParams.get("admin") ?? "")) return json({ error: "Only the poll admin can export results." }, { status: 403 });
   if (!isClosed(poll)) return json({ error: "Exports are available only after this poll closes." }, { status: 400 });
@@ -18,7 +18,7 @@ export function GET({ params, url, cookies }) {
   }, null, 2), {
     headers: {
       "Content-Type": "application/json; charset=utf-8",
-      "Content-Disposition": `attachment; filename="poll-${poll.id}.json"`
+      "Content-Disposition": `attachment; filename="poll-${poll.slug}.json"`
     }
   });
 }

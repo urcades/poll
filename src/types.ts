@@ -45,6 +45,8 @@ export interface PollConfig {
 
 export interface Poll {
   id: number;
+  /** Unguessable public id used in every URL and API path; `id` is internal. */
+  slug: string;
   type: PollType;
   title: string;
   details: string;
@@ -113,3 +115,8 @@ export interface TallyResult {
   roundLogs?: RoundLog[];
   voteDetails?: Array<{ voterName: string; ballot: unknown; reason: string }>;
 }
+
+/** Tally as sent to the browser: voter names and reasons only, never full ballots. */
+export type PublicTallyResult = Omit<TallyResult, "voteDetails"> & {
+  voteDetails?: Array<{ voterName: string; reason: string }>;
+};

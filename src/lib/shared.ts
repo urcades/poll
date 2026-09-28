@@ -1,6 +1,6 @@
 import { formatNumber } from "../tally";
 import { templateByType } from "../templates";
-import type { Poll, RoundLog, TallyResult } from "../types";
+import type { Poll, PublicTallyResult, RoundLog } from "../types";
 
 export function isClosed(poll: Poll): boolean {
   const now = new Date();
@@ -43,7 +43,7 @@ export function formatTallies(tallies: Record<number, number>): Record<string, s
   return Object.fromEntries(Object.entries(tallies).map(([key, value]) => [key, formatNumber(value)]));
 }
 
-export function resultHeaders(tally: TallyResult): string[] {
+export function resultHeaders(tally: PublicTallyResult): string[] {
   if (tally.type === "score") return ["Rank", "Option", "Total", "Mean", "Voters"];
   if (tally.type === "allocate" || tally.type === "rank") return ["Rank", "Option", "Points", "% points", "Mean"];
   if (tally.type === "time_poll") return ["Rank", "Timeslot", "Available", "If needed", "Unavailable"];
@@ -52,7 +52,7 @@ export function resultHeaders(tally: TallyResult): string[] {
   return ["Option", "Votes", "%"];
 }
 
-export function resultCells(tally: TallyResult, row: TallyResult["rows"][number]): Array<string | number> {
+export function resultCells(tally: PublicTallyResult, row: PublicTallyResult["rows"][number]): Array<string | number> {
   if (tally.type === "score") return [row.rank ?? "", row.label, formatNumber(row.points ?? 0), formatNumber(row.mean ?? 0), row.count ?? 0];
   if (tally.type === "allocate" || tally.type === "rank") return [row.rank ?? "", row.label, formatNumber(row.points ?? 0), `${formatNumber(row.percent ?? 0)}%`, formatNumber(row.mean ?? 0)];
   if (tally.type === "time_poll") return [row.rank ?? "", row.label, row.available ?? 0, row.ifNeeded ?? 0, row.unavailable ?? 0];

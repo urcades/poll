@@ -13,6 +13,7 @@ const baseOptions: Option[] = [
 function poll(type: PollType, config = {}): Poll {
   return {
     id: 1,
+    slug: "fixture",
     type,
     title: "Fixture",
     details: "",
