@@ -214,3 +214,125 @@ describe("IRV", () => {
     expect(result.exhaustedVotes).toBeGreaterThan(0);
   });
 });
+
+function namedOptions(labels: string[]): Option[] {
+  return labels.map((label, index) => ({ id: index + 1, pollId: 1, label, meaning: "", sortOrder: index }));
+}
+
+function repeat(count: number, prefix: string, rankings: number[]): Vote[] {
+  return Array.from({ length: count }, (_, i) => vote(`${prefix}${i}`, { rankings }));
+}
+
+describe("Scottish STV simultaneous quotas", () => {
+  // 10 voters, 3 seats, Droop quota floor(10/4)+1 = 3.
+  // A=5 and B=3 both reach quota in round 1. A's surplus is 2 (ratio 2/5); every A ballot ranks B second,
+  // but B is already elected, so the transfer skips to C: C = 1 + 5*0.4 = 3 and is elected in round 2.
+  test("elects every candidate at quota together and never transfers to them", () => {
+    const options = namedOptions(["A", "B", "C", "D"]);
+    const result = tallyPoll(poll("stv", { seats: 3, stvMethod: "scottish", quotaType: "droop" }), options, [
+      ...repeat(5, "a", [1, 2, 3]),
+      ...repeat(3, "b", [2]),
+      ...repeat(1, "c", [3]),
+      ...repeat(1, "d", [4])
+    ]);
+    expect(result.quota).toBe(3);
+    const rows = result.rows.filter((row) => row.status === "elected");
+    expect(rows.map((row) => [row.label, row.electedRound])).toEqual([["A", 1], ["B", 1], ["C", 2]]);
+    const electA = result.roundLogs!.find((log) => log.action === "elect A")!;
+    expect(electA.round).toBe(1);
+    expect(electA.tallies[2]).toBe(3);
+    expect(electA.tallies[3]).toBeCloseTo(3, 9);
+    expect(electA.tallies[4]).toBe(1);
+    expect(result.roundLogs!.find((log) => log.action === "elect B")!.tallies[2]).toBe(3);
+    for (const row of rows) expect(row.finalTally).toBeCloseTo(3, 9);
+    expect(rows.find((row) => row.label === "A")!.surplus).toBe(2);
+    expect(rows.find((row) => row.label === "B")!.surplus).toBe(0);
+  });
+});
+
+describe("reference examples", () => {
+  // Wikipedia STV "food election": 20 voters, 3 seats, Droop quota 6.
+  const food = namedOptions(["Oranges", "Pears", "Chocolate", "Strawberries", "Hamburgers"]);
+  const foodVotes = [
+    ...repeat(4, "o", [1, 2]),
+    ...repeat(2, "p", [2, 1]),
+    ...repeat(8, "cs", [3, 4]),
+    ...repeat(4, "ch", [3, 5]),
+    ...repeat(1, "s", [4]),
+    ...repeat(1, "h", [5])
+  ];
+
+  test("Scottish STV: food election elects Chocolate, Oranges, Strawberries", () => {
+    // R1: O4 P2 C12 S1 H1. Chocolate elected, surplus 6 (ratio 1/2): S = 1+8*.5 = 5, H = 1+4*.5 = 3.
+    // R2: nobody at 6; Pears (2) eliminated -> both ballots go to Oranges: O = 6.
+    // R3: Oranges elected exactly at quota. R4: Hamburgers (3) eliminated, Strawberries (5) remain -> elected.
+    const result = tallyPoll(poll("stv", { seats: 3, stvMethod: "scottish", quotaType: "droop" }), food, foodVotes);
+    expect(result.quota).toBe(6);
+    const elected = result.rows.filter((row) => row.status === "elected");
+    expect(elected.map((row) => row.label)).toEqual(["Chocolate", "Oranges", "Strawberries"]);
+    expect(elected.map((row) => row.electedRound)).toEqual([1, 3, 4]);
+    expect(elected[0]!.surplus).toBe(6);
+    expect(elected[0]!.finalTally).toBe(6);
+    expect(elected[1]!.finalTally).toBe(6);
+    const round2 = result.roundLogs!.find((log) => log.round === 2 && log.action === "count")!;
+    expect(round2.tallies).toEqual({ 1: 4, 2: 2, 3: 6, 4: 5, 5: 3 });
+    expect(result.roundLogs!.some((log) => log.action === "eliminate Pears")).toBe(true);
+    expect(result.roundLogs!.some((log) => log.action === "eliminate Hamburgers")).toBe(true);
+  });
+
+  test("Meek STV: food election elects the same winners", () => {
+    // Chocolate keep factor converges to 6/12 = 0.5; the rest of the count matches the Scottish trace.
+    const result = tallyPoll(poll("stv", { seats: 3, stvMethod: "meek", quotaType: "droop" }), food, foodVotes);
+    expect(result.quota).toBe(6);
+    expect(result.rows.filter((row) => row.status === "elected").map((row) => row.label)).toEqual(["Chocolate", "Oranges", "Strawberries"]);
+    const note = result.roundLogs!.map((log) => log.note ?? "").find((n) => n.includes("Chocolate:0.5"));
+    expect(note).toBeDefined();
+    expect(note).not.toMatch(/\b3:0\.5/);
+  });
+
+  test("IRV: multiple eliminations, exhausted ballots, exact tallies", () => {
+    // 14 ballots: A5 [A,B]; B4 [B,C]; C: 2 [C,B] + 1 [C]; D2 [D].
+    // R1 A5 B4 C3 D2 (no majority of 14) -> eliminate D, 2 ballots exhausted.
+    // R2 A5 B4 C3, 12 continuing (need >6) -> eliminate C: 2 go to B, 1 [C] exhausted.
+    // R3 A5 B6, 11 continuing (need >5.5) -> B elected, 3 exhausted.
+    const options = namedOptions(["A", "B", "C", "D"]);
+    const result = tallyPoll(poll("irv"), options, [
+      ...repeat(5, "a", [1, 2]),
+      ...repeat(4, "b", [2, 3]),
+      ...repeat(2, "c", [3, 2]),
+      ...repeat(1, "cx", [3]),
+      ...repeat(2, "d", [4])
+    ]);
+    expect(result.outcome).toBe("Elected: B");
+    expect(result.exhaustedVotes).toBe(3);
+    const counts = result.roundLogs!.filter((log) => log.action === "count");
+    expect(counts.map((log) => log.tallies)).toEqual([
+      { 1: 5, 2: 4, 3: 3, 4: 2 },
+      { 1: 5, 2: 4, 3: 3, 4: 0 },
+      { 1: 5, 2: 6, 3: 0, 4: 0 }
+    ]);
+    expect(result.roundLogs!.filter((log) => log.action.startsWith("eliminate")).map((log) => log.action)).toEqual(["eliminate D", "eliminate C"]);
+    const byLabel = Object.fromEntries(result.rows.map((row) => [row.label, row]));
+    expect(byLabel.B!.finalTally).toBe(6);
+    expect(byLabel.A!.finalTally).toBe(5);
+    expect(byLabel.B!.electedRound).toBe(3);
+    expect(byLabel.A!.firstPreferences).toBe(5);
+  });
+
+  test("IRV with 30 candidates completes with a single winner", () => {
+    const options = namedOptions(Array.from({ length: 30 }, (_, i) => `C${i + 1}`));
+    const votes = Array.from({ length: 30 }, (_, i) =>
+      vote(`v${i}`, { rankings: Array.from({ length: 30 }, (_, j) => ((i + j) % 30) + 1) })
+    );
+    const result = tallyPoll(poll("irv"), options, votes);
+    expect(result.rows.filter((row) => row.status === "elected")).toHaveLength(1);
+    expect(result.roundLogs!.some((log) => log.action.startsWith("elect"))).toBe(true);
+  });
+
+  test("IRV with 100 candidates is not cut off by the round cap", () => {
+    const options = namedOptions(Array.from({ length: 100 }, (_, i) => `C${i + 1}`));
+    const votes = Array.from({ length: 100 }, (_, i) => vote(`v${i}`, { rankings: [i + 1] }));
+    const result = tallyPoll(poll("irv"), options, votes);
+    expect(result.outcome).toBe("Elected: C100");
+  });
+});
