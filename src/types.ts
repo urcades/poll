@@ -15,6 +15,13 @@ export const POLL_TYPES = [
 
 export type PollType = (typeof POLL_TYPES)[number];
 
+/** Proposal types have fixed voting positions and a single-choice ballot. */
+export const PROPOSAL_TYPES = ["sense_check", "consent", "consensus", "majority"] as const satisfies readonly PollType[];
+
+export function isProposalType(type: PollType): boolean {
+  return (PROPOSAL_TYPES as readonly PollType[]).includes(type);
+}
+
 export type PollStatus = "draft" | "open" | "closed";
 export type HideResults = "off" | "after_vote" | "after_close";
 export type ReasonMode = "optional" | "required" | "disabled";

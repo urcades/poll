@@ -1,40 +1,77 @@
 <script lang="ts">
   import { resolve } from "$app/paths";
+  import { enhance } from "$app/forms";
   import { invalidateAll } from "$app/navigation";
   import { Button, Table, tableColumn, tableColumns } from "@flowercomputer/flowerparts";
   import AppPageHeader from "$lib/AppPageHeader.svelte";
   import { formatNumber } from "../../../tally";
   import { templateByType } from "../../../templates";
-  import type { Option, Poll, PublicTallyResult, Vote } from "../../../types";
+  import type { SubmitFunction } from "@sveltejs/kit";
+  import { untrack } from "svelte";
+  import type { PageProps } from "./$types";
+  import { isProposalType, type Option, type Poll, type PublicTallyResult, type Vote } from "../../../types";
+  import { pendingForm } from "$lib/enhance.svelte";
   import { isClosed, isOpen, resultCells, resultHeaders, roundTallies, statusLabel } from "$lib/shared";
 
-  let {
-    data,
-    form
-  }: {
-    data: {
-      poll: Poll;
-      options: Option[];
-      voteCount: number;
-      viewerName: string;
-      viewerVote: Vote | null;
-      tally: PublicTallyResult | null;
-      showResults: boolean;
-      isAdmin: boolean;
-      inviteRequired: boolean;
-      invitations: Array<{ name: string; voted: boolean; link: string | null }> | null;
-      adminLink: string | null;
-    };
-    form?: { error?: string };
-  } = $props();
+  let { data, form }: PageProps = $props();
 
   const template = $derived(templateByType.get(data.poll.type));
 
-  // Keep vote counts and results fresh for everyone with the page open.
+  const voteForm = pendingForm();
+  const adminForm = pendingForm();
+
+  // Keep vote counts and results fresh for everyone with the page open. A cheap
+  // version probe runs every 5s; the full load only reruns when it changed, and
+  // never while the viewer is typing in a form or a submission is in flight.
+  let stale = false;
+  let checking = false;
+
+  function busy(): boolean {
+    return voteForm.pending || adminForm.pending || Boolean(document.activeElement?.closest("form"));
+  }
+
+  async function refreshIfStale() {
+    if (!stale || busy()) return;
+    stale = false;
+    await invalidateAll();
+  }
+
+  async function checkVersion(slug: string) {
+    if (checking || document.visibilityState === "hidden") return;
+    checking = true;
+    try {
+      const response = await fetch(resolve("/poll/[id]/version", { id: slug }), { cache: "no-store" });
+      if (response.ok) {
+        const { version } = await response.json();
+        if (version !== untrack(() => data.version)) stale = true;
+      }
+    } catch {
+      // Offline or server hiccup: try again on the next tick.
+    } finally {
+      checking = false;
+    }
+    await refreshIfStale();
+  }
+
   $effect(() => {
-    if (!isOpen(data.poll)) return;
-    const timer = setInterval(() => invalidateAll(), 5000);
-    return () => clearInterval(timer);
+    if (data.poll.status === "draft" || isClosed(data.poll)) return;
+    const slug = data.poll.slug;
+    const timer = setInterval(() => checkVersion(slug), 5000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") checkVersion(slug);
+    };
+    const onFocusOut = () => setTimeout(refreshIfStale, 0);
+    document.addEventListener("visibilitychange", onVisible);
+    document.addEventListener("focusout", onFocusOut);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+      document.removeEventListener("focusout", onFocusOut);
+    };
+  });
+
+  $effect(() => {
+    if (!voteForm.pending && !adminForm.pending) untrack(refreshIfStale);
   });
 
   let copiedName = $state<string | null>(null);
@@ -52,9 +89,13 @@
     }
   }
 
-  function confirmDelete(event: SubmitEvent) {
-    if (!confirm("Delete this poll and all of its votes? This cannot be undone.")) event.preventDefault();
-  }
+  const confirmedDelete: SubmitFunction = (input) => {
+    if (!confirm("Delete this poll and all of its votes? This cannot be undone.")) {
+      input.cancel();
+      return;
+    }
+    return adminForm.enhance(input);
+  };
   function ballotObject(value: unknown): Record<string, unknown> {
     return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
   }
@@ -73,7 +114,7 @@
 </AppPageHeader>
 
 {#if form?.error}
-  <p>{form.error}</p>
+  <p role="alert">{form.error}</p>
 {/if}
 
 <p>{template?.label ?? data.poll.type} · {statusLabel(data.poll)} · {data.voteCount} vote{data.voteCount === 1 ? "" : "s"}</p>
@@ -152,12 +193,12 @@
       {/each}
     </ul>
     {#if !isClosed(data.poll)}
-      <form method="post" action="?/addInvitees">
+      <form method="post" action="?/addInvitees" use:enhance={adminForm.enhance}>
         <label>
           Add invitees (one name per line)
           <textarea name="inviteesText" rows="3" required></textarea>
         </label>
-        <Button type="submit" variant="secondary">Add invitees</Button>
+        <Button type="submit" variant="secondary" disabled={adminForm.pending}>Add invitees</Button>
       </form>
     {/if}
   </section>
@@ -175,11 +216,11 @@
   <div class="actions">
     {#if poll.status === "draft"}
       <Button href={resolve("/poll/[id]/edit", { id: poll.slug })} variant="secondary">Edit draft</Button>
-      <form method="post" action="?/open"><Button type="submit" variant="primary">Open voting</Button></form>
+      <form method="post" action="?/open" use:enhance={adminForm.enhance}><Button type="submit" variant="primary" disabled={adminForm.pending}>Open voting</Button></form>
     {:else if !isClosed(poll)}
-      <form method="post" action="?/close"><Button type="submit" variant="secondary">Close poll</Button></form>
+      <form method="post" action="?/close" use:enhance={adminForm.enhance}><Button type="submit" variant="secondary" disabled={adminForm.pending}>Close poll</Button></form>
     {/if}
-    <form method="post" action="?/delete" onsubmit={confirmDelete}><Button type="submit" variant="secondary">Delete</Button></form>
+    <form method="post" action="?/delete" use:enhance={confirmedDelete}><Button type="submit" variant="secondary" disabled={adminForm.pending}>Delete</Button></form>
   </div>
 {/snippet}
 
@@ -190,14 +231,14 @@
   {@const currentAllocations = ballotObject(currentBallot.allocations)}
   {@const currentRankings = Array.isArray(currentBallot.rankings) ? currentBallot.rankings.map(Number) : []}
   {@const currentAvailability = ballotObject(currentBallot.availability)}
-  <form method="post" action="?/vote">
+  <form method="post" action="?/vote" use:enhance={voteForm.enhance}>
     {#if inviteBallot}
       <p>Voting as <strong>{viewerName || "your invited name"}</strong></p>
     {:else}
       <label>Your display name <input name="voterName" required value={viewerName} /></label>
     {/if}
 
-    {#if ["sense_check", "consent", "consensus", "majority"].includes(poll.type)}
+    {#if isProposalType(poll.type)}
       <fieldset>
         <legend>Position</legend>
         {#each options as option (option.id)}
@@ -272,7 +313,7 @@
       </label>
     {/if}
 
-    <Button type="submit" variant="primary">{viewerVote ? "Update vote" : "Submit vote"}</Button>
+    <Button type="submit" variant="primary" disabled={voteForm.pending}>{viewerVote ? "Update vote" : "Submit vote"}</Button>
   </form>
 {/snippet}
 

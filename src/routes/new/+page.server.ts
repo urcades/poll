@@ -2,8 +2,9 @@ import { fail, redirect } from "@sveltejs/kit";
 import { defaultConfigFor, defaultOptionsText } from "../../templates";
 import { POLL_TYPES, type PollType } from "../../types";
 import { createPollWithAdmin, inputFromRequest } from "$lib/server/app";
+import type { Actions, PageServerLoad } from "./$types";
 
-export function load({ url }) {
+export const load = (({ url }) => {
   const selected = parseType(url.searchParams.get("type")) ?? "sense_check";
   return {
     selected,
@@ -17,7 +18,7 @@ export function load({ url }) {
       config: defaultConfigFor(selected)
     }
   };
-}
+}) satisfies PageServerLoad;
 
 export const actions = {
   default: async ({ request, cookies }) => {
@@ -30,7 +31,7 @@ export const actions = {
     }
     redirect(303, `/poll/${slug}`);
   }
-};
+} satisfies Actions;
 
 function parseType(value: unknown): PollType | null {
   return POLL_TYPES.includes(value as PollType) ? value as PollType : null;

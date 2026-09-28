@@ -7,6 +7,7 @@ import { POST as editPollRoute } from "../src/routes/api/polls/[id]/+server";
 import { POST as openPollRoute } from "../src/routes/api/polls/[id]/open/+server";
 import { POST as closePollRoute } from "../src/routes/api/polls/[id]/close/+server";
 import { POST as voteRoute } from "../src/routes/api/polls/[id]/votes/+server";
+import { GET as versionRoute } from "../src/routes/poll/[id]/version/+server";
 import { GET as exportCsvRoute } from "../src/routes/poll/[id]/export.csv/+server";
 import { GET as exportJsonRoute } from "../src/routes/poll/[id]/export.json/+server";
 import { actions as pollActions, load as pollLoad } from "../src/routes/poll/[id]/+page.server";
@@ -1132,6 +1133,60 @@ describe("SvelteKit app integration", () => {
       const firstId = migrated.getInvites(1)[0]!.id;
       migrated.replaceInvitees(1, ["Bo"], "tok");
       expect(migrated.getInvites(1)[0]!.id).toBeGreaterThan(firstId);
+    });
+  });
+
+  describe("version endpoint", () => {
+    async function getVersion(id: string) {
+      return await versionRoute({ params: { id } } as never);
+    }
+    async function versionOf(id: string): Promise<string> {
+      const response = await getVersion(id);
+      expect(response.status).toBe(200);
+      return (await response.json() as { version: string }).version;
+    }
+
+    test("is stable until a vote or close changes the poll", async () => {
+      storeFixture();
+      const { id } = await createPoll();
+      await openPoll(id);
+      const initial = await versionOf(id);
+      expect(await versionOf(id)).toBe(initial);
+      expect((await loadPoll(id)).version).toBe(initial);
+
+      await postJson(voteRoute, { id }, { voterName: "Ada", selected: [1] });
+      const afterVote = await versionOf(id);
+      expect(afterVote).not.toBe(initial);
+      expect(await versionOf(id)).toBe(afterVote);
+      expect((await loadPoll(id)).version).toBe(afterVote);
+
+      await postJson(voteRoute, { id }, { voterName: "Bo", selected: [2] });
+      const afterSecond = await versionOf(id);
+      expect(afterSecond).not.toBe(afterVote);
+
+      await closePoll(id);
+      expect(await versionOf(id)).not.toBe(afterSecond);
+    });
+
+    test("changes when invitees are added", async () => {
+      const db = storeFixture();
+      const { id, adminToken } = await createPoll({ voterMode: "invite", inviteesText: "Ada" });
+      await openPoll(id);
+      const initial = await versionOf(id);
+      db.addInvitees(pid(db, id), ["Bo"], adminToken);
+      expect(await versionOf(id)).not.toBe(initial);
+    });
+
+    test("sends no-store and 404s for unknown slugs and numeric ids", async () => {
+      storeFixture();
+      const { id } = await createPoll();
+      const ok = await getVersion(id);
+      expect(ok.headers.get("cache-control")).toBe("no-store");
+      for (const unknown of ["missing123", "1"]) {
+        const response = await getVersion(unknown);
+        expect(response.status).toBe(404);
+        expect(response.headers.get("cache-control")).toBe("no-store");
+      }
     });
   });
 });

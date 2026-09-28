@@ -1,7 +1,8 @@
 import { json } from "@sveltejs/kit";
 import { getStore, inputFromRequest, isPollAdmin, updateDraftOrThrow } from "$lib/server/app";
+import type { RequestHandler } from "./$types";
 
-export async function POST({ params, request, cookies }) {
+export const POST: RequestHandler = async ({ params, request, cookies }) => {
   const poll = getStore().getPollBySlug(params.id);
   if (!poll) return json({ error: "Poll not found." }, { status: 404 });
   if (!isPollAdmin(cookies, poll.id)) return json({ error: "Only the poll admin can edit this draft." }, { status: 403 });
@@ -12,4 +13,4 @@ export async function POST({ params, request, cookies }) {
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : String(error) }, { status: 400 });
   }
-}
+};

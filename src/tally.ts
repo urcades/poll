@@ -1,12 +1,13 @@
-import type {
-  Option,
-  Poll,
-  PollConfig,
-  QuotaType,
-  ResultRow,
-  RoundLog,
-  TallyResult,
-  Vote
+import {
+  isProposalType,
+  type Option,
+  type Poll,
+  type PollConfig,
+  type QuotaType,
+  type ResultRow,
+  type RoundLog,
+  type TallyResult,
+  type Vote
 } from "./types";
 
 const EPSILON = 1e-7;
@@ -64,7 +65,7 @@ export function validateBallot(poll: Poll, options: Option[], ballot: unknown): 
   const ids = new Set(options.map((option) => option.id));
   const object = asObject(ballot);
 
-  if (["sense_check", "consent", "consensus", "majority"].includes(poll.type)) {
+  if (isProposalType(poll.type)) {
     const id = selectedOptionId(ballot);
     return id && ids.has(id) ? null : "Choose one voting option.";
   }

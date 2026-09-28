@@ -3,10 +3,11 @@
   import { Button } from "@flowercomputer/flowerparts";
   import AppPageHeader from "$lib/AppPageHeader.svelte";
   import { formatDate, labelForPoll, shorten, statusLabel } from "$lib/shared";
+  import type { PageProps } from "./$types";
   import type { Poll } from "../types";
 
   type Item = { poll: Poll; role: "admin" | "voter" | "invitee" | null };
-  let { data }: { data: { drafts: Item[]; active: Item[]; closed: Item[] } } = $props();
+  let { data }: PageProps = $props();
   const isEmpty = $derived(data.drafts.length + data.active.length + data.closed.length === 0);
 </script>
 

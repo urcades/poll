@@ -2,7 +2,7 @@ import { error, json, redirect, type Cookies } from "@sveltejs/kit";
 import { deriveInviteToken, hashToken, MAX_INVITEES, Store, tokenMatches, type CreatePollInput } from "../../db";
 import { baseConfig, defaultConfigFor, templateByType } from "../../templates";
 import { tallyPoll, validateBallot } from "../../tally";
-import { POLL_TYPES, type Invite, type Option, type Poll, type PollConfig, type PollType, type PublicTallyResult, type TallyResult, type Vote } from "../../types";
+import { isProposalType, POLL_TYPES, type Invite, type Option, type Poll, type PollConfig, type PollType, type PublicTallyResult, type TallyResult, type Vote } from "../../types";
 import { isClosed, isOpen } from "../shared";
 
 let store: Store | null = null;
@@ -449,7 +449,7 @@ export async function readData(request: Request): Promise<Record<string, unknown
 function validatePollSetup(type: PollType, config: PollConfig, options: Array<{ label: string; meaning: string }>) {
   if (options.length < 1) throw new Error("At least one option is required.");
 
-  if (["sense_check", "consent", "consensus", "majority"].includes(type)) {
+  if (isProposalType(type)) {
     const expected = templateByType.get(type)?.defaultOptions.map((option) => option.label) ?? [];
     const actual = options.map((option) => option.label);
     if (expected.length !== actual.length || expected.some((label, index) => label !== actual[index])) {
@@ -526,7 +526,7 @@ function parseConfig(type: PollType, data: Record<string, unknown>): PollConfig 
 }
 
 function parseBallot(poll: Poll, options: Option[], data: Record<string, unknown>): unknown {
-  if (["sense_check", "consent", "consensus", "majority"].includes(poll.type)) return { optionId: numberField(data.optionId, 0) };
+  if (isProposalType(poll.type)) return { optionId: numberField(data.optionId, 0) };
   if (poll.type === "choose" || poll.type === "approval") return { selected: arrayField(data.selected).map(Number) };
   if (poll.type === "score") return { scores: Object.fromEntries(options.map((option) => [option.id, numberField(data[`score_${option.id}`], poll.config.scoreMin ?? 0)])) };
   if (poll.type === "allocate") return { allocations: Object.fromEntries(options.map((option) => [option.id, numberField(data[`allocation_${option.id}`], 0)])) };

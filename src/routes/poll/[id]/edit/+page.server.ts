@@ -1,8 +1,9 @@
 import { error, fail, redirect } from "@sveltejs/kit";
 import { dateTimeLocalValue } from "$lib/shared";
 import { getStore, inputFromRequest, isPollAdmin, updateDraftOrThrow } from "$lib/server/app";
+import type { Actions, PageServerLoad } from "./$types";
 
-export function load({ params, cookies }) {
+export const load = (({ params, cookies }) => {
   const poll = getStore().getPollBySlug(params.id);
   if (!poll) error(404, "Poll not found.");
   if (!isPollAdmin(cookies, poll.id)) error(403, "Only the poll admin can edit this draft.");
@@ -21,7 +22,7 @@ export function load({ params, cookies }) {
       config: poll.config
     }
   };
-}
+}) satisfies PageServerLoad;
 
 export const actions = {
   default: async ({ params, request, cookies }) => {
@@ -36,4 +37,4 @@ export const actions = {
     }
     redirect(303, `/poll/${poll.slug}`);
   }
-};
+} satisfies Actions;

@@ -1,7 +1,9 @@
 <script lang="ts">
+  import { enhance } from "$app/forms";
   import { Button } from "@flowercomputer/flowerparts";
+  import { pendingForm } from "$lib/enhance.svelte";
   import { defaultOptionsText, templates } from "../templates";
-  import type { PollConfig, PollType } from "../types";
+  import { isProposalType, type PollConfig, type PollType } from "../types";
   import { untrack } from "svelte";
 
   type OptionItem = { label: string; meaning: string };
@@ -12,7 +14,6 @@
     { label: "Election methods", category: "election" }
   ] as const;
 
-  const fixedProposalTypes = new Set<PollType>(["sense_check", "consent", "consensus", "majority"]);
   const templatesByType = Object.fromEntries(templates.map((template) => [template.type, template]));
   const optionLabels: Record<PollType, string> = {
     sense_check: "Voting positions",
@@ -49,6 +50,7 @@
     submitLabel: string;
   } = $props();
 
+  const submit = pendingForm();
   const initial = untrack(() => ({ selected, values }));
 
   let selectedType = $state.raw(initial.selected);
@@ -73,7 +75,7 @@
 
   const activeTemplate = $derived(templatesByType[selectedType]);
   const optionCount = $derived(optionItems.filter((option) => option.label.trim()).length);
-  const fixed = $derived(fixedProposalTypes.has(selectedType));
+  const fixed = $derived(isProposalType(selectedType));
   const serializedOptions = $derived(serializeOptions(optionItems));
   const optionsHint = $derived(getOptionsHint());
   const inviteeCount = $derived(new Set(inviteesText.split(/\r?\n/).map((line) => line.trim().toLowerCase()).filter(Boolean)).size);
@@ -155,7 +157,7 @@
 
 </script>
 
-<form method="post" {action}>
+<form method="post" {action} use:enhance={submit.enhance}>
   <label>
     Type
     <select name="type" id="type" bind:value={selectedType} onchange={syncType}>
@@ -378,5 +380,5 @@
     </fieldset>
   </details>
 
-  <Button type="submit" variant="primary">{submitLabel}</Button>
+  <Button type="submit" variant="primary" disabled={submit.pending}>{submit.pending ? "Saving..." : submitLabel}</Button>
 </form>

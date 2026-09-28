@@ -1,8 +1,9 @@
 import { json } from "@sveltejs/kit";
 import { exportVotes, getStore, isPollAdmin, tallyFor } from "$lib/server/app";
 import { isClosed } from "$lib/shared";
+import type { RequestHandler } from "./$types";
 
-export function GET({ params, url, cookies }) {
+export const GET: RequestHandler = ({ params, url, cookies }) => {
   const poll = getStore().getPollBySlug(params.id);
   if (!poll) return json({ error: "Poll not found." }, { status: 404 });
   if (!isPollAdmin(cookies, poll.id, url.searchParams.get("admin") ?? "")) return json({ error: "Only the poll admin can export results." }, { status: 403 });
@@ -21,4 +22,4 @@ export function GET({ params, url, cookies }) {
       "Content-Disposition": `attachment; filename="poll-${poll.slug}.json"`
     }
   });
-}
+};

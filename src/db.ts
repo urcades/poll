@@ -393,6 +393,24 @@ export class Store {
     return row ? mapPoll(row) : null;
   }
 
+  /** Cheap change marker for live refresh: one aggregate query, no tally. Null if the slug is unknown. */
+  pollVersion(slug: string): string | null {
+    this.sweepScheduledCloses();
+    const now = new Date().toISOString();
+    const row = this.db.query(`
+      SELECT p.status AS status,
+             COALESCE(p.closed_at, '') AS closed_at,
+             (p.opens_at IS NULL OR p.opens_at <= ?1) AS started,
+             (p.closes_at IS NOT NULL AND p.closes_at <= ?1) AS ended,
+             (SELECT COUNT(*) FROM votes v WHERE v.poll_id = p.id) AS votes,
+             (SELECT COALESCE(MAX(v.updated_at), '') FROM votes v WHERE v.poll_id = p.id) AS last_vote,
+             (SELECT COUNT(*) FROM invites i WHERE i.poll_id = p.id) AS invites
+      FROM polls p WHERE p.slug = ?2
+    `).get(now, slug) as { status: string; closed_at: string; started: number; ended: number; votes: number; last_vote: string; invites: number } | null;
+    if (!row) return null;
+    return [row.status, row.closed_at, row.started, row.ended, row.votes, row.last_vote, row.invites].join("|");
+  }
+
   getOptions(pollId: number): Option[] {
     return (this.db.query("SELECT * FROM options WHERE poll_id = ? ORDER BY sort_order, id").all(pollId) as OptionRow[]).map(mapOption);
   }

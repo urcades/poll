@@ -1,7 +1,8 @@
 import { csvCell, exportVotes, getStore, isPollAdmin } from "$lib/server/app";
 import { isClosed } from "$lib/shared";
+import type { RequestHandler } from "./$types";
 
-export function GET({ params, url, cookies }) {
+export const GET: RequestHandler = ({ params, url, cookies }) => {
   const poll = getStore().getPollBySlug(params.id);
   if (!poll) return text("Poll not found.", 404);
   if (!isPollAdmin(cookies, poll.id, url.searchParams.get("admin") ?? "")) return text("Only the poll admin can export results.", 403);
@@ -26,7 +27,7 @@ export function GET({ params, url, cookies }) {
       "Content-Disposition": `attachment; filename="poll-${poll.slug}.csv"`
     }
   });
-}
+};
 
 function text(body: string, status = 200): Response {
   return new Response(body, { status, headers: { "Content-Type": "text/plain; charset=utf-8" } });

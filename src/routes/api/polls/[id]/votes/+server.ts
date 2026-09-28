@@ -1,8 +1,9 @@
 import { json } from "@sveltejs/kit";
 import { getStore, InviteRequiredError, submitVote } from "$lib/server/app";
 import { isOpen } from "$lib/shared";
+import type { RequestHandler } from "./$types";
 
-export async function POST({ params, request, cookies }) {
+export const POST: RequestHandler = async ({ params, request, cookies }) => {
   const poll = getStore().getPollBySlug(params.id);
   if (!poll) return json({ error: "Poll not found." }, { status: 404 });
   if (!isOpen(poll)) return json({ error: "Voting is not open." }, { status: 400 });
@@ -13,4 +14,4 @@ export async function POST({ params, request, cookies }) {
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : String(error) }, { status: error instanceof InviteRequiredError ? 403 : 400 });
   }
-}
+};

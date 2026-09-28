@@ -1,8 +1,9 @@
 import { error, fail, redirect } from "@sveltejs/kit";
 import { addInviteesOrThrow, adminCookieToken, canShowResults, closePollOrThrow, currentInvite, deletePollOrThrow, getStore, grantAdminFromUrl, grantInviteFromUrl, InviteRequiredError, invitationsFor, isPollAdmin, openPollOrThrow, publicTally, submitVote, tallyFor, voteTokenFor, voterNameFor } from "$lib/server/app";
 import { isOpen } from "$lib/shared";
+import type { Actions, PageServerLoad } from "./$types";
 
-export function load({ params, url, cookies }) {
+export const load = (({ params, url, cookies }) => {
   const poll = getStore().getPollBySlug(params.id);
   if (!poll) error(404, "Poll not found.");
   if (url.searchParams.has("admin") || url.searchParams.has("invite")) {
@@ -39,9 +40,11 @@ export function load({ params, url, cookies }) {
     invitations: isAdmin && inviteMode ? invitationsFor(poll, votes, adminToken) : null,
     // Rebuilt from the admin's own cookie (only hashes are stored). Operators
     // who are not this poll's admin get no link.
-    adminLink: adminToken ? `/poll/${poll.slug}?admin=${encodeURIComponent(adminToken)}` : null
+    adminLink: adminToken ? `/poll/${poll.slug}?admin=${encodeURIComponent(adminToken)}` : null,
+    /** Change marker the page compares against /poll/[id]/version to know when to reload. */
+    version: getStore().pollVersion(poll.slug) ?? ""
   };
-}
+}) satisfies PageServerLoad;
 
 export const actions = {
   open: async ({ params, cookies }) => {
@@ -94,4 +97,4 @@ export const actions = {
     // The viewer's name travels in a cookie (set by recordVote), not the URL.
     redirect(303, `/poll/${poll.slug}`);
   }
-};
+} satisfies Actions;

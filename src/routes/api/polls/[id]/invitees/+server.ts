@@ -1,8 +1,9 @@
 import { json } from "@sveltejs/kit";
 import { addInviteesOrThrow, readData } from "$lib/server/app";
+import type { RequestHandler } from "./$types";
 
 /** Admin only: add invitees to an invite-only poll (draft or open). Body: `{ "inviteesText": "Ada\nBo" }`. */
-export async function POST({ params, request, cookies }) {
+export const POST: RequestHandler = async ({ params, request, cookies }) => {
   try {
     const data = await readData(request);
     const text = typeof data.inviteesText === "string" ? data.inviteesText : "";
@@ -11,4 +12,4 @@ export async function POST({ params, request, cookies }) {
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : String(error) }, { status: 400 });
   }
-}
+};
