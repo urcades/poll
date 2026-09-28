@@ -14,6 +14,7 @@ export interface Template {
 
 export const baseConfig: PollConfig = {
   anonymous: false,
+  voterMode: "open",
   hideResults: "off",
   reasonMode: "optional",
   quorumPercent: 0,

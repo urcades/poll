@@ -43,6 +43,7 @@
       optionsText: string;
       opensAt: string;
       closesAt: string;
+      inviteesText: string;
       config: PollConfig;
     };
     submitLabel: string;
@@ -65,6 +66,8 @@
   let stvMethod = $state(initial.values.config.stvMethod ?? "scottish");
   let quotaType = $state(initial.values.config.quotaType ?? "droop");
   let meetingDurationMinutes = $state(initial.values.config.meetingDurationMinutes ?? 60);
+  let voterMode = $state<"open" | "invite">(initial.values.config.voterMode === "invite" ? "invite" : "open");
+  let inviteesText = $state(initial.values.inviteesText);
   let opensAt = $state(initial.values.opensAt);
   let closesAt = $state(initial.values.closesAt);
 
@@ -73,6 +76,7 @@
   const fixed = $derived(fixedProposalTypes.has(selectedType));
   const serializedOptions = $derived(serializeOptions(optionItems));
   const optionsHint = $derived(getOptionsHint());
+  const inviteeCount = $derived(new Set(inviteesText.split(/\r?\n/).map((line) => line.trim().toLowerCase()).filter(Boolean)).size);
 
   function parseOptionsText(text: string): OptionItem[] {
     return text.split(/\r?\n/)
@@ -294,6 +298,25 @@
   <p class="hint" id="options-hint">{optionsHint}</p>
 
   <fieldset>
+    <legend>Who can vote</legend>
+    <fieldset class="radio-group">
+      <legend>Voter mode</legend>
+      <div class="radio-options">
+        <label><input type="radio" name="voterMode" value="open" bind:group={voterMode} /> Open link</label>
+        <label><input type="radio" name="voterMode" value="invite" bind:group={voterMode} /> Invite only</label>
+      </div>
+    </fieldset>
+    <p class="field-help">Open link: anyone with the poll link can vote under any name. Invite only: each invitee gets a personal link and can vote once as the name you list; other visitors cannot vote.</p>
+    {#if voterMode === "invite"}
+      <label>
+        Invited voters
+        <textarea name="inviteesText" id="inviteesText" rows="6" bind:value={inviteesText}></textarea>
+      </label>
+      <p class="field-help" id="invitees-hint">One name per line ({inviteeCount} invited so far; max 500). Duplicates are ignored, ignoring case. Personal links appear on the poll page once you save. You can add invitees after voting opens but not remove anyone.</p>
+    {/if}
+  </fieldset>
+
+  <fieldset>
     <legend>Timing</legend>
     <div class="inline-field">
       <label for="opensAt">Opens at</label>
@@ -312,7 +335,7 @@
     <fieldset>
       <legend>Advanced settings, modeled only</legend>
       <label><input type="checkbox" name="anonymous" checked={values.config.anonymous} /> Anonymous voting</label>
-      <p class="field-help">Hide voter names and reasons in results and exports. Display names are still stored internally so later votes can replace earlier ones.</p>
+      <p class="field-help">Hide voter names and reasons in results and exports. Display names are still stored internally so later votes can replace earlier ones.{#if voterMode === "invite"} In invite-only polls the admin's invitation list still shows which invitees have voted (not what they voted), like a sign-in sheet.{/if}</p>
 
       <fieldset class="radio-group">
         <legend>Hide results</legend>
@@ -337,8 +360,12 @@
       <label>Quorum percent <input type="number" name="quorumPercent" min="0" max="100" value={values.config.quorumPercent} /></label>
       <p class="field-help">Quorum is the minimum participation threshold for treating a result as valid. For example, 50% means at least half of eligible voters must cast a vote.</p>
 
-      <label>Eligible voter count <input type="number" name="eligibleVoterCount" min="0" value={values.config.eligibleVoterCount} /></label>
-      <p class="field-help">The number of people allowed or expected to vote. This app uses it with quorum percent to calculate how many votes are needed.</p>
+      {#if voterMode === "invite"}
+        <p class="field-help">Eligible voters: the number of invitees ({inviteeCount}) is used with quorum percent to calculate how many votes are needed.</p>
+      {:else}
+        <label>Eligible voter count <input type="number" name="eligibleVoterCount" min="0" value={values.config.eligibleVoterCount} /></label>
+        <p class="field-help">The number of people allowed or expected to vote. This app uses it with quorum percent to calculate how many votes are needed.</p>
+      {/if}
 
       <label><input type="checkbox" name="allowComments" checked={values.config.allowComments} /> Allow comments flag</label>
       <p class="field-help">Stores whether this poll should allow comments. Comment threads are not implemented in this minimal version.</p>

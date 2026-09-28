@@ -16,6 +16,7 @@
         optionsText: string;
         opensAt: string;
         closesAt: string;
+        inviteesText: string;
         config: PollConfig;
       };
     };

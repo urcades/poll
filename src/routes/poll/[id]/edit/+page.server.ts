@@ -1,6 +1,6 @@
 import { error, fail, redirect } from "@sveltejs/kit";
 import { dateTimeLocalValue } from "$lib/shared";
-import { getStore, inputFromRequest, isPollAdmin } from "$lib/server/app";
+import { getStore, inputFromRequest, isPollAdmin, updateDraftOrThrow } from "$lib/server/app";
 
 export function load({ params, cookies }) {
   const poll = getStore().getPollBySlug(params.id);
@@ -17,6 +17,7 @@ export function load({ params, cookies }) {
       optionsText: options.map((option) => option.meaning ? `${option.label} | ${option.meaning}` : option.label).join("\n"),
       opensAt: dateTimeLocalValue(poll.opensAt),
       closesAt: dateTimeLocalValue(poll.closesAt),
+      inviteesText: getStore().getInvites(poll.id).map((invite) => invite.name).join("\n"),
       config: poll.config
     }
   };
@@ -29,11 +30,10 @@ export const actions = {
     if (!isPollAdmin(cookies, poll.id)) return fail(403, { error: "Only the poll admin can edit this draft." });
     if (poll.status !== "draft") return fail(400, { error: "Only draft polls can be edited." });
     try {
-      const input = { id: poll.id, ...(await inputFromRequest(request)) };
-      if (!getStore().updatePoll(input)) throw new Error("Could not update draft.");
+      updateDraftOrThrow(poll, await inputFromRequest(request), cookies);
     } catch (error) {
       return fail(400, { error: error instanceof Error ? error.message : String(error) });
     }
-    redirect(303, `/poll/${poll.id}`);
+    redirect(303, `/poll/${poll.slug}`);
   }
 };

@@ -13,7 +13,8 @@ This project started as a local exploration of Loomio-style poll creation and la
 - One active vote per display name per poll; the same browser can update its vote, and a per-vote edit token (held in a cookie) prevents other visitors from silently replacing it by reusing the name.
 - Result visibility controls, anonymous result/export mode, quorum fields, and optional/required/disabled vote reasons.
 - A per-poll admin capability: creating a poll mints an admin token (cookie plus a shareable admin link) that is required to edit drafts, open, close, or delete the poll, and export results. Opening the admin link swaps the token for a cookie and redirects to the plain poll URL. Only a SHA-256 hash of the token is stored, so the admin link shown on the poll page is rebuilt from the admin's own cookie; an admin who loses their cookie and link cannot recover it.
-- A "My votes" home page listing only the polls this browser created or voted in (grouped as drafts, active, closed), based on its capability cookies. A brand-new visitor sees an empty state; they reach a poll through the link they were given.
+- Optional invite-only mode (`voterMode: "invite"`; open-link voting stays the default). The admin lists invitee names, one per line (trimmed, de-duplicated ignoring case, max 80 characters each, up to 500). Each invitee gets a personal link, `/poll/<slug>?invite=<token>`, which is swapped for an httpOnly cookie and redirected to the clean URL. The ballot then shows "Voting as <name>" with no name field; the server ignores any submitted name, rejects votes without a valid invite ("This poll is invite-only. Use the personal link you were sent.") on both the form and `POST /api/polls/<slug>/votes`, and lets the same invite re-vote to update its ballot. The invitee list is set while the poll is a draft; once open, the admin can add invitees (form on the poll page or `POST /api/polls/<slug>/invitees` with `inviteesText`) but never remove or rename anyone. In invite mode quorum uses the number of invitees as the eligible count and the manual eligible voter count is ignored. The admin sees an "Invitations" section with each invitee's personal link (copy button), whether they have voted (not what), and "N of M invitees have voted".
+- A "My votes" home page listing only the polls this browser created, voted in, or was invited to (grouped as drafts, active, closed), based on its capability cookies. A brand-new visitor sees an empty state; they reach a poll through the link they were given.
 - An optional instance operator secret (`OPERATOR_TOKEN` env var). Visiting any poll with `?admin=<OPERATOR_TOKEN>` makes that browser admin of every poll and lets its home page list every poll. This is the only way to manage legacy polls created before admin tokens existed and a way to remove spam. Operators who are not a poll's own admin do not get a shareable admin link.
 - JSON and CSV exports for closed polls (admin only).
 - A SvelteKit frontend styled with `@flowercomputer/flowerparts`.
@@ -133,7 +134,18 @@ fly deploy
 fly scale count 1
 ```
 
-The database lives at `/data/votes.sqlite` on the volume. Take volume snapshots (or add Litestream) if losing poll history would hurt. `auto_stop_machines` is enabled; cold starts are a few seconds and the data survives them.
+The database lives at `/data/votes.sqlite` on the volume. `auto_stop_machines` is enabled; cold starts are a few seconds and the data survives them.
+
+### Backups With Litestream
+
+The image bundles [Litestream](https://litestream.io). When `LITESTREAM_REPLICA_URL` is set, `deploy/start.sh` restores the latest replica onto an empty volume and then runs the app under continuous replication; without it, the app starts normally.
+
+```bash
+fly secrets set LITESTREAM_REPLICA_URL=s3://my-bucket/poll \
+  LITESTREAM_ACCESS_KEY_ID=... LITESTREAM_SECRET_ACCESS_KEY=...
+```
+
+Any S3-compatible store works (Tigris, R2, B2); non-AWS endpoints take an `?endpoint=` query on the URL. Without Litestream, take regular volume snapshots if losing poll history would hurt.
 
 ## Useful Commands
 
@@ -163,7 +175,11 @@ bun run preview
 
 ## Data And Privacy Notes
 
-Runtime data is stored locally in `work/votes.sqlite`, which is ignored by Git. The schema is versioned with ordered migrations tracked in `PRAGMA user_version` (each runs in a transaction on startup); opening an older database upgrades it in place, including adding poll slugs and hashing existing tokens. Back up the file before upgrading a database you care about. The app does not implement accounts, email delivery, reminders, or per-voter administration. It assumes a lightweight trust model where the link is shared with friends or collaborators; capability tokens (a vote edit token per ballot, an admin token per poll) provide just enough ownership without any sign-in. Tokens live in httpOnly cookies and are stored in the database only as SHA-256 hashes, so a leaked database file does not hand out admin or vote-edit access. Poll slugs are random, so polls cannot be enumerated by counting.
+Runtime data is stored locally in `work/votes.sqlite`, which is ignored by Git. The schema is versioned with ordered migrations tracked in `PRAGMA user_version` (each runs in a transaction on startup); opening an older database upgrades it in place, including adding poll slugs and hashing existing tokens. Back up the file before upgrading a database you care about. The app does not implement accounts, email delivery (invite links are copied and sent by the admin), or reminders. It assumes a lightweight trust model where the link is shared with friends or collaborators; capability tokens (a vote edit token per ballot, an admin token per poll) provide just enough ownership without any sign-in. Tokens live in httpOnly cookies and are stored in the database only as SHA-256 hashes, so a leaked database file does not hand out admin or vote-edit access. Poll slugs are random, so polls cannot be enumerated by counting.
+
+Invite links are never stored. Each invitee's token is derived as HMAC-SHA256 keyed by the poll's admin token over `invite:<invite id>` (base64url), and only its SHA-256 hash goes in the `invites` table. The admin page regenerates every link from the admin's own cookie, exactly like the admin link, so a database leak yields no usable invite link, and an operator who is not the poll's own admin sees invitee names and voted status but no links and cannot create new invitees. Losing the admin token means losing the ability to re-show the links (already-issued links keep working). Invite mode limits casual multiple voting under different names; it is not identity verification, since anyone who receives a link can vote as that invitee, and an invitee can forward it.
+
+The admin's invitation list shows who has voted, like a sign-in sheet, even when the poll is anonymous. Anonymous mode still hides names and reasons in results and exports, but not participation from the admin.
 
 Hidden results (before vote or before close) are enforced server-side: the tally and voter data are excluded from the page payload entirely, not just hidden in the UI. When results are shown for a non-anonymous poll, the page payload includes voter names and reasons but not full ballots; ballots appear only in the admin JSON/CSV export.
 

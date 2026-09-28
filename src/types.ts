@@ -20,10 +20,13 @@ export type HideResults = "off" | "after_vote" | "after_close";
 export type ReasonMode = "optional" | "required" | "disabled";
 export type QuotaType = "droop" | "hare";
 export type StvMethod = "scottish" | "meek";
+export type VoterMode = "open" | "invite";
 export type TimeAvailability = "available" | "if_needed" | "unavailable";
 
 export interface PollConfig {
   anonymous: boolean;
+  /** "open": anyone with the link votes under a name they type. "invite": only named invitees, via personal links. */
+  voterMode: VoterMode;
   hideResults: HideResults;
   reasonMode: ReasonMode;
   quorumPercent: number;
@@ -57,6 +60,14 @@ export interface Poll {
   manuallyClosedAt: string | null;
   openedAt: string | null;
   closedAt: string | null;
+  createdAt: string;
+}
+
+/** An invited voter. The token hash and derived token never leave the server. */
+export interface Invite {
+  id: number;
+  pollId: number;
+  name: string;
   createdAt: string;
 }
 

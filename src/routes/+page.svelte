@@ -5,7 +5,7 @@
   import { formatDate, labelForPoll, shorten, statusLabel } from "$lib/shared";
   import type { Poll } from "../types";
 
-  type Item = { poll: Poll; role: "admin" | "voter" | null };
+  type Item = { poll: Poll; role: "admin" | "voter" | "invitee" | null };
   let { data }: { data: { drafts: Item[]; active: Item[]; closed: Item[] } } = $props();
   const isEmpty = $derived(data.drafts.length + data.active.length + data.closed.length === 0);
 </script>
@@ -50,7 +50,7 @@
       {#each items as { poll, role } (poll.id)}
         <article class="card">
           <h3><a href={resolve("/poll/[id]", { id: poll.slug })}>{poll.title}</a></h3>
-          <p>{labelForPoll(poll)} · {statusLabel(poll)}{role === "admin" ? " · created by you" : role === "voter" ? " · you voted" : ""}</p>
+          <p>{labelForPoll(poll)} · {statusLabel(poll)}{role === "admin" ? " · created by you" : role === "voter" ? " · you voted" : role === "invitee" ? " · you are invited" : ""}</p>
           {#if poll.details}
             <p>{shorten(poll.details, 180)}</p>
           {/if}

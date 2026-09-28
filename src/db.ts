@@ -1,8 +1,8 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname } from "node:path";
-import type { Option, Poll, PollConfig, PollStatus, PollType, Vote } from "./types";
+import type { Invite, Option, Poll, PollConfig, PollStatus, PollType, Vote } from "./types";
 import { defaultConfigFor } from "./templates";
 
 const require = createRequire(import.meta.url);
@@ -134,6 +134,29 @@ export function tokenMatches(storedHash: string, presented: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+/**
+ * Personal voting token for one invitee: HMAC-SHA256 keyed by the poll's
+ * plaintext admin token over `invite:<invite id>`, base64url. Only
+ * `hashToken()` of it is stored, so the admin (who holds the admin token) can
+ * regenerate every invite link on demand while the database alone, or an
+ * operator who is not the poll admin, cannot.
+ */
+export function deriveInviteToken(adminToken: string, inviteId: number): string {
+  return createHmac("sha256", adminToken).update(`invite:${inviteId}`).digest("base64url");
+}
+
+export const MAX_INVITEES = 500;
+
+interface InviteRow {
+  id: number;
+  poll_id: number;
+  name: string;
+  token_hash: string;
+  created_at: string;
+}
+
+const NO_ADMIN_TOKEN_MESSAGE = "Invite links can only be created with the poll's own admin link (the operator token cannot derive them).";
+
 export interface CreatePollInput {
   type: PollType;
   title: string;
@@ -144,6 +167,8 @@ export interface CreatePollInput {
   options: Array<{ label: string; meaning: string }>;
   /** Plaintext admin token; only its hash is stored. */
   adminToken?: string;
+  /** Invitee names for `voterMode: "invite"` (already trimmed and de-duplicated). Ignored in open mode. */
+  invitees?: string[];
 }
 
 export interface UpdatePollInput extends CreatePollInput {
@@ -269,6 +294,25 @@ const MIGRATIONS: Migration[] = [
         db.query("UPDATE votes SET edit_token_hash = ? WHERE id = ?").run(hashToken(row.token), row.id);
       }
     }
+  },
+  {
+    // Invite mode: one row per invited voter. Only a hash of each personal
+    // token is stored; the token itself is re-derived from the admin token.
+    // AUTOINCREMENT so a deleted invite's id (and thus its derived token) is
+    // never reissued to a different person.
+    version: 4,
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS invites (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          poll_id INTEGER NOT NULL REFERENCES polls(id) ON DELETE CASCADE,
+          name TEXT NOT NULL,
+          token_hash TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          UNIQUE(poll_id, name)
+        );
+      `);
+    }
   }
 ];
 
@@ -391,6 +435,7 @@ export class Store {
           const pollId = Number(result.lastInsertRowid);
           const optionInsert = this.db.query("INSERT INTO options (poll_id, label, meaning, sort_order) VALUES (?, ?, ?, ?)");
           input.options.forEach((option, index) => optionInsert.run(pollId, option.label, option.meaning, index));
+          this.syncInvitees(pollId, input.config.voterMode === "invite" ? input.invitees ?? [] : [], input.adminToken ?? "");
           return { id: pollId, slug };
         })();
       } catch (error) {
@@ -420,9 +465,82 @@ export class Store {
       this.db.query("DELETE FROM options WHERE poll_id = ?").run(input.id);
       const optionInsert = this.db.query("INSERT INTO options (poll_id, label, meaning, sort_order) VALUES (?, ?, ?, ?)");
       input.options.forEach((option, index) => optionInsert.run(input.id, option.label, option.meaning, index));
+      this.syncInvitees(input.id, input.config.voterMode === "invite" ? input.invitees ?? [] : [], input.adminToken ?? "");
       return true;
     });
     return tx();
+  }
+
+  getInvites(pollId: number): Invite[] {
+    return (this.db.query("SELECT * FROM invites WHERE poll_id = ? ORDER BY id").all(pollId) as InviteRow[]).map(mapInvite);
+  }
+
+  countInvites(pollId: number): number {
+    return (this.db.query("SELECT COUNT(*) AS n FROM invites WHERE poll_id = ?").get(pollId) as { n: number }).n;
+  }
+
+  /**
+   * The invite whose personal token this is, or null. Looks the hash up
+   * directly: the hash of a secret reveals nothing through lookup timing.
+   */
+  findInviteByToken(pollId: number, token: string): Invite | null {
+    if (!token) return null;
+    const row = this.db.query("SELECT * FROM invites WHERE poll_id = ? AND token_hash = ?").get(pollId, hashToken(token)) as InviteRow | null;
+    return row ? mapInvite(row) : null;
+  }
+
+  /**
+   * Makes the poll's invitees exactly `names` (draft setup). Existing rows for
+   * kept names are untouched so their links stay valid. Removing someone who
+   * already voted is refused. Creating links needs the plaintext admin token.
+   */
+  replaceInvitees(pollId: number, names: string[], adminToken: string) {
+    this.db.transaction(() => this.syncInvitees(pollId, names, adminToken))();
+  }
+
+  /** Adds invitees (skipping names already invited, compared case-insensitively). Returns the names actually added. */
+  addInvitees(pollId: number, names: string[], adminToken: string): string[] {
+    return this.db.transaction(() => {
+      const existing = new Set(this.getInvites(pollId).map((invite) => invite.name.toLowerCase()));
+      const fresh: string[] = [];
+      for (const name of names) {
+        if (existing.has(name.toLowerCase())) continue;
+        existing.add(name.toLowerCase());
+        fresh.push(name);
+      }
+      if (fresh.length && !adminToken) throw new Error(NO_ADMIN_TOKEN_MESSAGE);
+      if (existing.size > MAX_INVITEES) throw new Error(`Too many invitees (max ${MAX_INVITEES}).`);
+      for (const name of fresh) this.insertInvite(pollId, name, adminToken);
+      return fresh;
+    })();
+  }
+
+  /** Not transactional on its own: call inside a transaction. */
+  private syncInvitees(pollId: number, names: string[], adminToken: string) {
+    if (names.length > MAX_INVITEES) throw new Error(`Too many invitees (max ${MAX_INVITEES}).`);
+    const wanted = new Map(names.map((name) => [name.toLowerCase(), name]));
+    const current = this.getInvites(pollId);
+    const kept = new Set<string>();
+    for (const invite of current) {
+      const key = invite.name.toLowerCase();
+      if (wanted.has(key) && wanted.get(key) === invite.name) {
+        kept.add(key);
+        continue;
+      }
+      const voted = this.db.query("SELECT 1 AS x FROM votes WHERE poll_id = ? AND voter_name = ?").get(pollId, invite.name);
+      if (voted) throw new Error(`${invite.name} has already voted and cannot be removed from the invitee list.`);
+      this.db.query("DELETE FROM invites WHERE id = ?").run(invite.id);
+    }
+    const fresh = [...wanted.entries()].filter(([key]) => !kept.has(key)).map(([, name]) => name);
+    if (fresh.length && !adminToken) throw new Error(NO_ADMIN_TOKEN_MESSAGE);
+    for (const name of fresh) this.insertInvite(pollId, name, adminToken);
+  }
+
+  private insertInvite(pollId: number, name: string, adminToken: string) {
+    // The token depends on the row id, so insert first and then store its hash.
+    const result = this.db.query("INSERT INTO invites (poll_id, name, token_hash, created_at) VALUES (?, ?, '', ?)").run(pollId, name, new Date().toISOString());
+    const id = Number(result.lastInsertRowid);
+    this.db.query("UPDATE invites SET token_hash = ? WHERE id = ?").run(hashToken(deriveInviteToken(adminToken, id)), id);
   }
 
   /** True if `token` is this poll's admin token. Only hashes are stored; legacy polls (empty hash) never match. */
@@ -487,6 +605,10 @@ function mapPoll(row: PollRow): Poll {
     closedAt: row.closed_at,
     createdAt: row.created_at
   };
+}
+
+function mapInvite(row: InviteRow): Invite {
+  return { id: row.id, pollId: row.poll_id, name: row.name, createdAt: row.created_at };
 }
 
 function mapOption(row: OptionRow): Option {

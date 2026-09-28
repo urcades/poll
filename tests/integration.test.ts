@@ -9,9 +9,11 @@ import { POST as closePollRoute } from "../src/routes/api/polls/[id]/close/+serv
 import { POST as voteRoute } from "../src/routes/api/polls/[id]/votes/+server";
 import { GET as exportCsvRoute } from "../src/routes/poll/[id]/export.csv/+server";
 import { GET as exportJsonRoute } from "../src/routes/poll/[id]/export.json/+server";
-import { load as pollLoad } from "../src/routes/poll/[id]/+page.server";
+import { actions as pollActions, load as pollLoad } from "../src/routes/poll/[id]/+page.server";
 import { load as homeLoad } from "../src/routes/+page.server";
 import { deletePollOrThrow, resetStoreForTesting, tallyFor } from "../src/lib/server/app";
+import { deriveInviteToken, hashToken } from "../src/db";
+import { POST as inviteesRoute } from "../src/routes/api/polls/[id]/invitees/+server";
 import { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 import { Store as StoreClass } from "../src/db";
@@ -763,5 +765,373 @@ describe("SvelteKit app integration", () => {
     const exported = await (await getExport(exportJsonRoute, id)).json() as { tally: { voteDetails: Array<{ ballot: unknown }> }; votes: Array<{ ballot: unknown }> };
     expect(exported.votes[0]!.ballot).toBeDefined();
     expect(exported.tally.voteDetails[0]!.ballot).toBeDefined();
+  });
+
+  describe("invite mode", () => {
+    async function createInvitePoll(overrides: Record<string, unknown> = {}, jar: CookieJar = cookies) {
+      const response = await postJson(createPollRoute, {}, {
+        type: "choose",
+        title: "Board vote",
+        optionsText: "Pizza\nSushi\nTacos",
+        voterMode: "invite",
+        inviteesText: "Ada\nBo\nCy",
+        ...overrides
+      }, jar);
+      expect(response.status).toBe(200);
+      return await response.json() as { id: string; adminToken: string };
+    }
+
+    /** Invite tokens as the admin page presents them, keyed by invitee name. */
+    async function inviteTokens(id: string, jar: CookieJar = cookies): Promise<Record<string, string>> {
+      const page = await loadPoll(id, jar);
+      return Object.fromEntries((page.invitations ?? []).map((invitation) => {
+        const token = new URL(invitation.link ?? "", "http://local.test").searchParams.get("invite");
+        return [invitation.name, token ?? ""];
+      }));
+    }
+
+    async function redeem(id: string, token: string, jar: CookieJar) {
+      await expect(loadPoll(id, jar, `?invite=${encodeURIComponent(token)}`)).rejects.toMatchObject({ status: 303, location: `/poll/${id}` });
+    }
+
+    function formVote(id: string, fields: Record<string, string>, jar: CookieJar) {
+      return pollActions.vote({
+        params: { id },
+        request: new Request("http://local.test", {
+          method: "POST",
+          headers: { "content-type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams(fields)
+        }),
+        cookies: jar
+      } as never) as Promise<unknown>;
+    }
+
+    test("invite tokens derive from the admin token and verify; links are rebuilt from the admin cookie", async () => {
+      const db = storeFixture();
+      const { id, adminToken } = await createInvitePoll();
+      const internal = pid(db, id);
+      const invites = db.getInvites(internal);
+      expect(invites.map((invite) => invite.name)).toEqual(["Ada", "Bo", "Cy"]);
+
+      const tokens = await inviteTokens(id);
+      for (const invite of invites) {
+        expect(tokens[invite.name]).toBe(deriveInviteToken(adminToken, invite.id));
+        expect(db.findInviteByToken(internal, tokens[invite.name]!)?.name).toBe(invite.name);
+      }
+      expect(new Set(Object.values(tokens)).size).toBe(3);
+      expect(deriveInviteToken("other-admin-token", invites[0]!.id)).not.toBe(tokens.Ada);
+      expect(db.findInviteByToken(internal, "nope")).toBeNull();
+      expect(db.findInviteByToken(internal, "")).toBeNull();
+
+      // Non-admins see no invitation data at all.
+      expect((await loadPoll(id, cookieJar())).invitations).toBeNull();
+    });
+
+    test("the database holds no plaintext invite tokens", async () => {
+      const db = storeFixture();
+      const { id, adminToken } = await createInvitePoll();
+      const tokens = Object.values(await inviteTokens(id));
+      const dump = JSON.stringify(db.db.query("SELECT * FROM invites").all());
+      for (const token of tokens) {
+        expect(dump).not.toContain(token);
+        const row = db.db.query("SELECT token_hash FROM invites WHERE token_hash = ?").get(hashToken(token));
+        expect(row).not.toBeNull();
+      }
+      expect(dump).not.toContain(adminToken);
+    });
+
+    test("?invite= sets the invite cookie and redirects to the clean URL; bad tokens grant nothing", async () => {
+      const db = storeFixture();
+      const { id } = await createInvitePoll();
+      await openPoll(id);
+      const tokens = await inviteTokens(id);
+      const internal = pid(db, id);
+
+      const ada = cookieJar();
+      await redeem(id, tokens.Ada!, ada);
+      expect(ada.get(`poll_${internal}_invite_token`)).toBe(tokens.Ada!);
+      const page = await loadPoll(id, ada);
+      expect(page.viewerName).toBe("Ada");
+      expect(page.inviteRequired).toBe(false);
+      expect(page.isAdmin).toBe(false);
+
+      const guesser = cookieJar();
+      await expect(loadPoll(id, guesser, "?invite=nope")).rejects.toMatchObject({ status: 303 });
+      expect(guesser.get(`poll_${internal}_invite_token`)).toBeUndefined();
+      expect((await loadPoll(id, guesser)).inviteRequired).toBe(true);
+
+      // An invite for another poll is worthless here.
+      const other = await createInvitePoll({ title: "Other" });
+      const otherTokens = await inviteTokens(other.id);
+      await expect(loadPoll(id, guesser, `?invite=${otherTokens.Ada}`)).rejects.toMatchObject({ status: 303 });
+      expect(guesser.get(`poll_${internal}_invite_token`)).toBeUndefined();
+    });
+
+    test("voting without a valid invite is rejected on the JSON API and the form action", async () => {
+      const db = storeFixture();
+      const { id } = await createInvitePoll();
+      await openPoll(id);
+      const options = db.getOptions(pid(db, id));
+      const pick = { selected: [String(options[0]!.id)] };
+
+      for (const jar of [cookieJar(), cookies /* the admin is not automatically an invitee */]) {
+        const response = await postJson(voteRoute, { id }, { voterName: "Ada", ...pick }, jar);
+        expect(response.status).toBe(403);
+        expect(((await response.json()) as { error: string }).error).toBe("This poll is invite-only. Use the personal link you were sent.");
+      }
+      const forged = cookieJar();
+      forged.set(`poll_${pid(db, id)}_invite_token`, "guess");
+      expect((await postJson(voteRoute, { id }, { voterName: "Ada", ...pick }, forged)).status).toBe(403);
+
+      const failure = await formVote(id, { voterName: "Ada", selected: String(options[0]!.id) }, cookieJar()) as { status: number; data: { error: string } };
+      expect(failure.status).toBe(403);
+      expect(failure.data.error).toContain("invite-only");
+      expect(db.getVotes(pid(db, id))).toEqual([]);
+    });
+
+    test("the invite decides the voter name; a submitted name is ignored; re-voting updates the ballot", async () => {
+      const db = storeFixture();
+      const { id } = await createInvitePoll({ hideResults: "after_vote" });
+      await openPoll(id);
+      const internal = pid(db, id);
+      const options = db.getOptions(internal);
+      const tokens = await inviteTokens(id);
+      const ada = cookieJar();
+      await redeem(id, tokens.Ada!, ada);
+
+      expect((await loadPoll(id, ada)).showResults).toBe(false);
+      const first = await postJson(voteRoute, { id }, { voterName: "Bo", selected: [String(options[0]!.id)], reason: "one" }, ada);
+      expect(first.status).toBe(200);
+      let votes = db.getVotes(internal);
+      expect(votes.map((vote) => vote.voterName)).toEqual(["Ada"]);
+      expect(ada.get(`poll_${internal}_vote_token`)).toBe(tokens.Ada!);
+      expect(decodeURIComponent(ada.get(`poll_${internal}_voter_name`)!)).toBe("Ada");
+
+      // Same invite again (via the form action, with yet another spoofed name) updates in place.
+      const result = await formVote(id, { voterName: "Cy", selected: String(options[1]!.id), reason: "two" }, ada).catch((error) => error);
+      expect(result).toMatchObject({ status: 303 });
+      votes = db.getVotes(internal);
+      expect(votes).toHaveLength(1);
+      expect(votes[0]!.voterName).toBe("Ada");
+      expect(votes[0]!.reason).toBe("two");
+      expect((votes[0]!.ballot as { selected: number[] }).selected).toEqual([options[1]!.id]);
+
+      const page = await loadPoll(id, ada);
+      expect(page.viewerVote?.reason).toBe("two");
+      expect(page.showResults).toBe(true);
+
+      // Bo's own link still works and is independent.
+      const bo = cookieJar();
+      await redeem(id, tokens.Bo!, bo);
+      expect((await postJson(voteRoute, { id }, { selected: [String(options[2]!.id)] }, bo)).status).toBe(200);
+      expect(db.getVotes(internal).map((vote) => vote.voterName).sort()).toEqual(["Ada", "Bo"]);
+
+      // The admin's invitation list shows who voted, not what.
+      const invitations = (await loadPoll(id)).invitations!;
+      expect(invitations.map(({ name, voted }) => [name, voted])).toEqual([["Ada", true], ["Bo", true], ["Cy", false]]);
+      expect(JSON.stringify(invitations)).not.toContain("selected");
+    });
+
+    test("the admin can add invitees while open; existing links stay valid and duplicates are skipped", async () => {
+      const db = storeFixture();
+      const { id } = await createInvitePoll();
+      await openPoll(id);
+      const before = await inviteTokens(id);
+
+      const stranger = cookieJar();
+      expect((await postJson(inviteesRoute, { id }, { inviteesText: "Mallory" }, stranger)).status).toBe(400);
+
+      const response = await postJson(inviteesRoute, { id }, { inviteesText: "Di\n ada \n\nEd\nDI" });
+      expect(response.status).toBe(200);
+      expect(((await response.json()) as { added: string[] }).added).toEqual(["Di", "Ed"]);
+
+      const after = await inviteTokens(id);
+      expect(Object.keys(after)).toEqual(["Ada", "Bo", "Cy", "Di", "Ed"]);
+      for (const name of ["Ada", "Bo", "Cy"]) expect(after[name]).toBe(before[name]!);
+
+      // The new invitee can vote; the form action path works too.
+      const di = cookieJar();
+      await redeem(id, after.Di!, di);
+      const options = db.getOptions(pid(db, id));
+      expect((await postJson(voteRoute, { id }, { selected: [String(options[0]!.id)] }, di)).status).toBe(200);
+
+      // Not for open-mode polls or closed polls.
+      const open = await createPoll();
+      expect((await postJson(inviteesRoute, { id: open.id }, { inviteesText: "X" })).status).toBe(400);
+      await closePoll(id);
+      expect((await postJson(inviteesRoute, { id }, { inviteesText: "Fay" })).status).toBe(400);
+    });
+
+    test("invitees who voted cannot be removed or renamed", async () => {
+      const db = storeFixture();
+      const { id, adminToken } = await createInvitePoll();
+      await openPoll(id);
+      const internal = pid(db, id);
+      const tokens = await inviteTokens(id);
+      const options = db.getOptions(internal);
+      const ada = cookieJar();
+      await redeem(id, tokens.Ada!, ada);
+      await postJson(voteRoute, { id }, { selected: [String(options[0]!.id)] }, ada);
+
+      expect(() => db.replaceInvitees(internal, ["Bo", "Cy"], adminToken)).toThrow("already voted");
+      expect(() => db.replaceInvitees(internal, ["ADA", "Bo", "Cy"], adminToken)).toThrow("already voted");
+      // Someone who has not voted can be dropped from the list.
+      db.replaceInvitees(internal, ["Ada", "Bo"], adminToken);
+      expect(db.getInvites(internal).map((invite) => invite.name)).toEqual(["Ada", "Bo"]);
+      expect(db.findInviteByToken(internal, tokens.Cy!)).toBeNull();
+      expect(db.findInviteByToken(internal, tokens.Ada!)?.name).toBe("Ada");
+      expect(db.getVotes(internal)).toHaveLength(1);
+    });
+
+    test("draft edits replace the invitee list; kept invitees keep their links, removed ones lose them", async () => {
+      const db = storeFixture();
+      const { id } = await createInvitePoll();
+      const before = await inviteTokens(id);
+      const edit = await postJson(editPollRoute, { id }, {
+        type: "choose", title: "Board vote", optionsText: "Pizza\nSushi\nTacos", voterMode: "invite", inviteesText: "Ada\nDi"
+      });
+      expect(edit.status).toBe(200);
+      const after = await inviteTokens(id);
+      expect(Object.keys(after)).toEqual(["Ada", "Di"]);
+      expect(after.Ada).toBe(before.Ada!);
+      expect(db.findInviteByToken(pid(db, id), before.Bo!)).toBeNull();
+
+      // Switching back to open mode clears the list.
+      const toOpen = await postJson(editPollRoute, { id }, { type: "choose", title: "Board vote", optionsText: "Pizza\nSushi\nTacos", voterMode: "open" });
+      expect(toOpen.status).toBe(200);
+      expect(db.getInvites(pid(db, id))).toEqual([]);
+      expect(db.getPollBySlug(id)?.config.voterMode).toBe("open");
+    });
+
+    test("an operator who is not the admin can see invitees but gets no links and cannot add new ones", async () => {
+      const db = storeFixture();
+      const { id } = await createInvitePoll();
+      const previous = process.env.OPERATOR_TOKEN;
+      process.env.OPERATOR_TOKEN = "operator-secret";
+      try {
+        const operator = cookieJar();
+        operator.set("poll_operator_token", "operator-secret");
+        const page = await loadPoll(id, operator);
+        expect(page.isAdmin).toBe(true);
+        expect(page.invitations?.map((invitation) => [invitation.name, invitation.link])).toEqual([["Ada", null], ["Bo", null], ["Cy", null]]);
+        const response = await postJson(inviteesRoute, { id }, { inviteesText: "Di" }, operator);
+        expect(response.status).toBe(400);
+        expect(db.getInvites(pid(db, id))).toHaveLength(3);
+        // Saving an unchanged list from the operator is fine.
+        const same = await postJson(editPollRoute, { id }, { type: "choose", title: "Renamed", optionsText: "Pizza\nSushi\nTacos", voterMode: "invite", inviteesText: "Ada\nBo\nCy" }, operator);
+        expect(same.status).toBe(200);
+      } finally {
+        if (previous === undefined) delete process.env.OPERATOR_TOKEN;
+        else process.env.OPERATOR_TOKEN = previous;
+      }
+    });
+
+    test("quorum counts invitees, not the typed eligible voter count", async () => {
+      const db = storeFixture();
+      const { id } = await createInvitePoll({ inviteesText: "Ada\nBo\nCy\nDi", quorumPercent: 50, eligibleVoterCount: 100 });
+      expect(db.getPollBySlug(id)?.config.eligibleVoterCount).toBe(0);
+      await openPoll(id);
+      const tokens = await inviteTokens(id);
+      const options = db.getOptions(pid(db, id));
+      const ada = cookieJar();
+      await redeem(id, tokens.Ada!, ada);
+      await postJson(voteRoute, { id }, { selected: [String(options[0]!.id)] }, ada);
+
+      let page = await loadPoll(id, ada);
+      expect(page.tally?.quorumText).toBe("1/2 votes for 50% quorum");
+      expect(page.tally?.quorumMet).toBe(false);
+
+      const bo = cookieJar();
+      await redeem(id, tokens.Bo!, bo);
+      await postJson(voteRoute, { id }, { selected: [String(options[0]!.id)] }, bo);
+      page = await loadPoll(id, ada);
+      expect(page.tally?.quorumMet).toBe(true);
+
+      // Adding invitees raises the bar.
+      await postJson(inviteesRoute, { id }, { inviteesText: "Ed\nFay\nGus\nHal" });
+      page = await loadPoll(id, ada);
+      expect(page.tally?.quorumText).toBe("2/4 votes for 50% quorum");
+    });
+
+    test("deleting a poll cascades to its invites", async () => {
+      const db = storeFixture();
+      const { id } = await createInvitePoll();
+      const internal = pid(db, id);
+      expect(db.countInvites(internal)).toBe(3);
+      deletePollOrThrow(id, cookies as never);
+      expect(db.countInvites(internal)).toBe(0);
+      expect((db.db.query("SELECT COUNT(*) AS n FROM invites").get() as { n: number }).n).toBe(0);
+    });
+
+    test("invite holders see the poll on the home page", async () => {
+      const db = storeFixture();
+      const { id } = await createInvitePoll();
+      await openPoll(id);
+      const tokens = await inviteTokens(id);
+      const ada = cookieJar();
+      expect(homeLoad({ cookies: ada } as never).active).toHaveLength(0);
+      await redeem(id, tokens.Ada!, ada);
+      const home = homeLoad({ cookies: ada } as never);
+      expect(home.active.map(({ role }) => role)).toEqual(["invitee"]);
+      const forger = cookieJar();
+      forger.set(`poll_${pid(db, id)}_invite_token`, "guess");
+      expect(homeLoad({ cookies: forger } as never).active).toHaveLength(0);
+    });
+
+    test("setup validation: invite mode needs invitees; names are trimmed, deduped, and length-limited", async () => {
+      const db = storeFixture();
+      const base = { type: "choose", title: "T", optionsText: "A\nB", voterMode: "invite" };
+      for (const inviteesText of ["", "  \n \n"]) {
+        const response = await postJson(createPollRoute, {}, { ...base, inviteesText });
+        expect(response.status).toBe(400);
+        expect(((await response.json()) as { error: string }).error).toContain("at least one invitee");
+      }
+      const tooLong = await postJson(createPollRoute, {}, { ...base, inviteesText: "x".repeat(81) });
+      expect(tooLong.status).toBe(400);
+      const tooMany = await postJson(createPollRoute, {}, { ...base, inviteesText: Array.from({ length: 501 }, (_, i) => `v${i}`).join("\n") });
+      expect(tooMany.status).toBe(400);
+
+      const { id } = await createInvitePoll({ inviteesText: "  Ada  \nada\n\nBo\nADA" });
+      expect(db.getInvites(pid(db, id)).map((invite) => invite.name)).toEqual(["Ada", "Bo"]);
+
+      // Invitee text is ignored in open mode.
+      const open = await createPoll({ inviteesText: "Ada" });
+      expect(db.countInvites(pid(db, open.id))).toBe(0);
+      expect(db.getPollBySlug(open.id)?.config.voterMode).toBe("open");
+    });
+
+    test("open mode is unchanged, and configs saved before voterMode existed read as open", async () => {
+      const db = storeFixture();
+      const { id } = await createPoll();
+      await openPoll(id);
+      const options = db.getOptions(pid(db, id));
+      expect((await postJson(voteRoute, { id }, { voterName: "Ada", selected: [String(options[0]!.id)] }, cookieJar())).status).toBe(200);
+      db.db.query("UPDATE polls SET config_json = '{}' WHERE slug = ?").run(id);
+      expect(db.getPollBySlug(id)?.config.voterMode).toBe("open");
+    });
+
+    test("migration 4 adds the invites table to a version-3 database", async () => {
+      const dir = mkdtempSync(join(tmpdir(), "loomio-lite-"));
+      cleanupPaths.push(dir);
+      const path = join(dir, "v3.sqlite");
+      const fresh = new StoreClass(path);
+      fresh.createPoll({ type: "choose", title: "Old", details: "", config: { ...templates[0]!.defaultConfig } as never, opensAt: null, closesAt: null, options: [{ label: "A", meaning: "" }], adminToken: "tok" });
+      fresh.close();
+      const raw = new Database(path);
+      raw.exec("DROP TABLE invites; PRAGMA user_version = 3;");
+      raw.close();
+
+      const migrated = new StoreClass(path);
+      store = migrated;
+      expect((migrated.db.query("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(4);
+      expect(migrated.listPolls()).toHaveLength(1);
+      expect(migrated.getPoll(1)?.config.voterMode).toBe("open");
+      migrated.replaceInvitees(1, ["Ada"], "tok");
+      expect(migrated.findInviteByToken(1, deriveInviteToken("tok", migrated.getInvites(1)[0]!.id))?.name).toBe("Ada");
+      // Ids are never reissued after a delete.
+      const firstId = migrated.getInvites(1)[0]!.id;
+      migrated.replaceInvitees(1, ["Bo"], "tok");
+      expect(migrated.getInvites(1)[0]!.id).toBeGreaterThan(firstId);
+    });
   });
 });

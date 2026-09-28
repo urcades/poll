@@ -1,8 +1,8 @@
 import { error, json, redirect, type Cookies } from "@sveltejs/kit";
-import { hashToken, Store, tokenMatches, type CreatePollInput } from "../../db";
+import { deriveInviteToken, hashToken, MAX_INVITEES, Store, tokenMatches, type CreatePollInput } from "../../db";
 import { baseConfig, defaultConfigFor, templateByType } from "../../templates";
 import { tallyPoll, validateBallot } from "../../tally";
-import { POLL_TYPES, type Option, type Poll, type PollConfig, type PollType, type PublicTallyResult, type TallyResult, type Vote } from "../../types";
+import { POLL_TYPES, type Invite, type Option, type Poll, type PollConfig, type PollType, type PublicTallyResult, type TallyResult, type Vote } from "../../types";
 import { isClosed, isOpen } from "../shared";
 
 let store: Store | null = null;
@@ -22,11 +22,21 @@ export function resetStoreForTesting(path = ":memory:"): Store {
 // A closed poll's votes can never change, so its tally is computed once.
 const closedTallyCache = new Map<number, TallyResult>();
 
+/**
+ * In invite mode the eligible electorate is the invitee list, so quorum is
+ * computed against that instead of the (ignored) hand-typed count. Handed to
+ * the tally as a config copy; tally.ts itself is unchanged.
+ */
+function withEligibleCount(poll: Poll): Poll {
+  if (poll.config.voterMode !== "invite") return poll;
+  return { ...poll, config: { ...poll.config, eligibleVoterCount: getStore().countInvites(poll.id) } };
+}
+
 export function tallyFor(poll: Poll, options: Option[], votes: Vote[]): TallyResult {
-  if (!isClosed(poll)) return tallyPoll(poll, options, votes);
+  if (!isClosed(poll)) return tallyPoll(withEligibleCount(poll), options, votes);
   let tally = closedTallyCache.get(poll.id);
   if (!tally) {
-    tally = tallyPoll(poll, options, votes);
+    tally = tallyPoll(withEligibleCount(poll), options, votes);
     closedTallyCache.set(poll.id, tally);
   }
   return tally;
@@ -80,6 +90,8 @@ export function inputFromData(data: Record<string, unknown>): CreatePollInput {
   const options = parseOptions(stringField(data.optionsText));
   const config = parseConfig(type, data);
   validatePollSetup(type, config, options);
+  const invitees = config.voterMode === "invite" ? parseInvitees(stringField(data.inviteesText)) : [];
+  if (config.voterMode === "invite" && invitees.length < 1) throw new Error("Invite-only polls need at least one invitee.");
   return {
     type,
     title,
@@ -87,13 +99,32 @@ export function inputFromData(data: Record<string, unknown>): CreatePollInput {
     config,
     opensAt: dateField(data.opensAt),
     closesAt: dateField(data.closesAt),
-    options
+    options,
+    invitees
   };
 }
 
-export async function voteInputFromRequest(request: Request, poll: Poll, options: Option[]) {
+/** One name per line: trimmed, blanks dropped, duplicates removed case-insensitively (first spelling wins). */
+export function parseInvitees(text: string): string[] {
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    const name = line.trim();
+    if (!name) continue;
+    if (name.length > LIMITS.voterName) throw new Error(`Invitee names are too long (max ${LIMITS.voterName} characters).`);
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    names.push(name);
+  }
+  if (names.length > MAX_INVITEES) throw new Error(`Too many invitees (max ${MAX_INVITEES}).`);
+  return names;
+}
+
+/** `forcedName` (invite mode) replaces whatever name the request carries. */
+export async function voteInputFromRequest(request: Request, poll: Poll, options: Option[], forcedName?: string) {
   const data = await readData(request);
-  const voterName = limitedField(data.voterName, "Display name", LIMITS.voterName).trim();
+  const voterName = forcedName ?? limitedField(data.voterName, "Display name", LIMITS.voterName).trim();
   if (!voterName) throw new Error("Display name is required.");
   const reason = poll.config.reasonMode === "disabled" ? "" : limitedField(data.reason, "Reason", LIMITS.reason).trim();
   if (poll.config.reasonMode === "required" && !reason) throw new Error("A reason is required.");
@@ -172,24 +203,24 @@ export function createPollWithAdmin(input: CreatePollInput, cookies: Cookies): {
 
 export interface Involvement {
   poll: Poll;
-  /** "admin": holds this poll's admin cookie; "voter": holds a vote token; null: operator-only visibility. */
-  role: "admin" | "voter" | null;
+  /** "admin": holds this poll's admin cookie; "voter": holds a vote token; "invitee": holds a valid personal invite link; null: operator-only visibility. */
+  role: "admin" | "voter" | "invitee" | null;
 }
 
 /**
  * Polls this browser is involved with, discovered from its capability cookies
- * (`poll_<id>_admin_token`, `poll_<id>_vote_token`). Every cookie is verified
+ * (`poll_<id>_admin_token`, `poll_<id>_vote_token`, `poll_<id>_invite_token`). Every cookie is verified
  * against the stored hash, so forged cookie names/values list nothing. The
  * operator sees every poll.
  */
 export function involvedPolls(cookies: Cookies): Involvement[] {
   const db = getStore();
   if (isOperator(cookies)) {
-    return db.listPolls().map((poll) => ({ poll, role: adminCookieToken(cookies, poll.id) ? "admin" : db.hasVoteToken(poll.id, voteTokenFor(cookies, poll.id)) ? "voter" : null }));
+    return db.listPolls().map((poll): Involvement => ({ poll, role: adminCookieToken(cookies, poll.id) ? "admin" : db.hasVoteToken(poll.id, voteTokenFor(cookies, poll.id)) ? "voter" : currentInvite(cookies, poll) ? "invitee" : null }));
   }
   const ids = new Set<number>();
   for (const { name } of cookies.getAll()) {
-    const match = /^poll_(\d+)_(?:admin|vote)_token$/.exec(name);
+    const match = /^poll_(\d+)_(?:admin|vote|invite)_token$/.exec(name);
     if (match) ids.add(Number(match[1]));
   }
   const result: Involvement[] = [];
@@ -198,6 +229,7 @@ export function involvedPolls(cookies: Cookies): Involvement[] {
     if (!poll) continue;
     if (adminCookieToken(cookies, id)) result.push({ poll, role: "admin" });
     else if (poll.status !== "draft" && db.hasVoteToken(id, voteTokenFor(cookies, id))) result.push({ poll, role: "voter" });
+    else if (poll.status !== "draft" && currentInvite(cookies, poll)) result.push({ poll, role: "invitee" });
   }
   return result.sort((a, b) => b.poll.createdAt.localeCompare(a.poll.createdAt));
 }
@@ -233,13 +265,89 @@ export function voteTokenFor(cookies: Cookies, pollId: number): string {
  * Stores the vote under this browser's edit token (minting one on first vote)
  * so another visitor cannot silently replace it by reusing the display name.
  */
-export function recordVote(poll: Poll, vote: { voterName: string; reason: string; ballot: unknown }, cookies: Cookies) {
-  const token = voteTokenFor(cookies, poll.id) || crypto.randomUUID();
+export function recordVote(poll: Poll, vote: { voterName: string; reason: string; ballot: unknown }, cookies: Cookies, editToken = "") {
+  const token = editToken || voteTokenFor(cookies, poll.id) || crypto.randomUUID();
   getStore().upsertVote(poll.id, vote.voterName, vote.ballot, vote.reason, token);
   cookies.set(voteTokenCookie(poll.id), token, TOKEN_COOKIE_OPTIONS);
   // Remember the name in a cookie so the post-vote redirect can stay clean of
   // `?voterName=` (names in URLs end up in history and logs).
   cookies.set(voterNameCookie(poll.id), encodeURIComponent(vote.voterName), TOKEN_COOKIE_OPTIONS);
+}
+
+export const INVITE_ONLY_MESSAGE = "This poll is invite-only. Use the personal link you were sent.";
+
+/** Thrown for a vote on an invite-only poll without a valid invite; routes map it to 403. */
+export class InviteRequiredError extends Error {
+  constructor() {
+    super(INVITE_ONLY_MESSAGE);
+  }
+}
+
+export function inviteTokenCookie(pollId: number): string {
+  return `poll_${pollId}_invite_token`;
+}
+
+/** The invitee this browser's invite cookie identifies, with the plaintext token; null if absent or invalid. */
+export function currentInvite(cookies: Cookies, poll: Poll): (Invite & { token: string }) | null {
+  const token = cookies.get(inviteTokenCookie(poll.id)) ?? "";
+  const invite = token ? getStore().findInviteByToken(poll.id, token) : null;
+  return invite ? { ...invite, token } : null;
+}
+
+/** Exchanges a `?invite=` URL token for a cookie; returns true if it was a valid invite. */
+export function grantInviteFromUrl(cookies: Cookies, poll: Poll, urlToken: string): boolean {
+  if (!urlToken || !getStore().findInviteByToken(poll.id, urlToken)) return false;
+  cookies.set(inviteTokenCookie(poll.id), urlToken, TOKEN_COOKIE_OPTIONS);
+  return true;
+}
+
+/**
+ * The single vote-submission path for the form action and the JSON API. In
+ * invite mode the voter is whoever the invite cookie says: any submitted name
+ * is ignored and the invite token doubles as the ballot's edit token, so
+ * re-voting from the same invite updates the ballot.
+ */
+export async function submitVote(poll: Poll, options: Option[], request: Request, cookies: Cookies) {
+  const invite = poll.config.voterMode === "invite" ? currentInvite(cookies, poll) : null;
+  if (poll.config.voterMode === "invite" && !invite) throw new InviteRequiredError();
+  const vote = await voteInputFromRequest(request, poll, options, invite?.name);
+  recordVote(poll, vote, cookies, invite?.token);
+}
+
+export interface InvitationView {
+  name: string;
+  voted: boolean;
+  /** Personal link, rebuilt from the admin's own cookie; null when this viewer lacks the plaintext admin token. */
+  link: string | null;
+}
+
+/** Admin-only invitee status (voted or not, never what) and links. */
+export function invitationsFor(poll: Poll, votes: Vote[], adminToken: string): InvitationView[] {
+  const voted = new Set(votes.map((vote) => vote.voterName));
+  return getStore().getInvites(poll.id).map((invite) => ({
+    name: invite.name,
+    voted: voted.has(invite.name),
+    link: adminToken ? `/poll/${poll.slug}?invite=${encodeURIComponent(deriveInviteToken(adminToken, invite.id))}` : null
+  }));
+}
+
+/** Adds invitees to a not-yet-closed invite-mode poll. Existing invitees are never removed or renamed. */
+export function addInviteesOrThrow(slug: string, cookies: Cookies, text: string): { poll: Poll; added: string[] } {
+  const db = getStore();
+  const poll = db.getPollBySlug(slug);
+  if (!poll) throw new Error("Poll not found.");
+  requirePollAdmin(cookies, poll.id);
+  if (poll.config.voterMode !== "invite") throw new Error("This poll is not invite-only.");
+  if (poll.status === "closed" || isClosed(poll)) throw new Error("Closed polls cannot take new invitees.");
+  const names = parseInvitees(text);
+  if (!names.length) throw new Error("Enter at least one name.");
+  const added = db.addInvitees(poll.id, names, adminCookieToken(cookies, poll.id));
+  return { poll, added };
+}
+
+/** Saves a draft edit, including its invitee list (invite links need the admin's plaintext token). */
+export function updateDraftOrThrow(poll: Poll, input: CreatePollInput, cookies: Cookies) {
+  if (!getStore().updatePoll({ id: poll.id, ...input, adminToken: adminCookieToken(cookies, poll.id) })) throw new Error("Could not update draft.");
 }
 
 export function openPollOrThrow(slug: string, cookies: Cookies) {
@@ -389,10 +497,12 @@ function validatePollSetup(type: PollType, config: PollConfig, options: Array<{ 
 function parseConfig(type: PollType, data: Record<string, unknown>): PollConfig {
   const config = { ...defaultConfigFor(type) };
   config.anonymous = boolField(data.anonymous);
+  config.voterMode = stringField(data.voterMode) === "invite" ? "invite" : "open";
   config.hideResults = ["off", "after_vote", "after_close"].includes(stringField(data.hideResults)) ? stringField(data.hideResults) as PollConfig["hideResults"] : baseConfig.hideResults;
   config.reasonMode = ["optional", "required", "disabled"].includes(stringField(data.reasonMode)) ? stringField(data.reasonMode) as PollConfig["reasonMode"] : baseConfig.reasonMode;
   config.quorumPercent = intField(data.quorumPercent, 0, 0, 100);
-  config.eligibleVoterCount = intField(data.eligibleVoterCount, 0, 0, 1_000_000);
+  // Invite mode counts the invitees instead; drop the typed value so it cannot disagree.
+  config.eligibleVoterCount = config.voterMode === "invite" ? 0 : intField(data.eligibleVoterCount, 0, 0, 1_000_000);
   config.allowComments = boolField(data.allowComments);
   config.allowReactions = boolField(data.allowReactions);
   config.shuffleOptions = boolField(data.shuffleOptions);

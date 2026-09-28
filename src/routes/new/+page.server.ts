@@ -13,6 +13,7 @@ export function load({ url }) {
       optionsText: defaultOptionsText(selected),
       opensAt: "",
       closesAt: "",
+      inviteesText: "",
       config: defaultConfigFor(selected)
     }
   };

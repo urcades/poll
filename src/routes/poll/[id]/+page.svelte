@@ -21,6 +21,8 @@
       tally: PublicTallyResult | null;
       showResults: boolean;
       isAdmin: boolean;
+      inviteRequired: boolean;
+      invitations: Array<{ name: string; voted: boolean; link: string | null }> | null;
       adminLink: string | null;
     };
     form?: { error?: string };
@@ -34,6 +36,21 @@
     const timer = setInterval(() => invalidateAll(), 5000);
     return () => clearInterval(timer);
   });
+
+  let copiedName = $state<string | null>(null);
+  const votedInvitees = $derived(data.invitations?.filter((invitation) => invitation.voted).length ?? 0);
+
+  async function copyLink(name: string, link: string) {
+    try {
+      await navigator.clipboard.writeText(new URL(link, window.location.origin).href);
+      copiedName = name;
+      setTimeout(() => {
+        if (copiedName === name) copiedName = null;
+      }, 2000);
+    } catch {
+      copiedName = null;
+    }
+  }
 
   function confirmDelete(event: SubmitEvent) {
     if (!confirm("Delete this poll and all of its votes? This cannot be undone.")) event.preventDefault();
@@ -75,7 +92,7 @@
     <h2>Draft preview</h2>
     <p class="hint">This is the voter-facing ballot preview. Voting is disabled until you open voting.</p>
     <div inert aria-disabled="true">
-      {@render VoteForm({ poll: data.poll, options: data.options, viewerName: "", viewerVote: null })}
+      {@render VoteForm({ poll: data.poll, options: data.options, viewerName: "", viewerVote: null, inviteBallot: false })}
     </div>
   </section>
   <section>
@@ -86,7 +103,11 @@
   <section>
     <h2>Vote</h2>
     {#if isOpen(data.poll)}
-      {@render VoteForm({ poll: data.poll, options: data.options, viewerName: data.viewerName, viewerVote: data.viewerVote })}
+      {#if data.inviteRequired}
+        <p>This poll is invite-only. Use the personal link you were sent.</p>
+      {:else}
+        {@render VoteForm({ poll: data.poll, options: data.options, viewerName: data.viewerName, viewerVote: data.viewerVote, inviteBallot: data.poll.config.voterMode === "invite" })}
+      {/if}
     {:else}
       <p>Voting is not open.</p>
     {/if}
@@ -113,6 +134,35 @@
   </section>
 {/if}
 
+{#if data.invitations}
+  <section id="invitations">
+    <h2>Invitations</h2>
+    <p><strong>{votedInvitees} of {data.invitations.length}</strong> invitees have voted.</p>
+    <p class="hint">Each personal link lets one person vote as the name shown. Send each link only to that person. You can see who has voted (not what they voted), even in anonymous polls.{data.invitations.some((invitation) => invitation.link) ? "" : " Links are only shown to the poll's own admin, not to the instance operator."}</p>
+    <ul>
+      {#each data.invitations as invitation (invitation.name)}
+        <li class="row">
+          <strong>{invitation.name}</strong>
+          <span>{invitation.voted ? "voted" : "not voted"}</span>
+          {#if invitation.link}
+            <a href={invitation.link}>personal link</a>
+            <Button type="button" onclick={() => copyLink(invitation.name, invitation.link ?? "")}>{copiedName === invitation.name ? "Copied" : "Copy link"}</Button>
+          {/if}
+        </li>
+      {/each}
+    </ul>
+    {#if !isClosed(data.poll)}
+      <form method="post" action="?/addInvitees">
+        <label>
+          Add invitees (one name per line)
+          <textarea name="inviteesText" rows="3" required></textarea>
+        </label>
+        <Button type="submit" variant="secondary">Add invitees</Button>
+      </form>
+    {/if}
+  </section>
+{/if}
+
 {#if data.adminLink}
   <section>
     <h2>Admin link</h2>
@@ -133,7 +183,7 @@
   </div>
 {/snippet}
 
-{#snippet VoteForm({ poll, options, viewerName, viewerVote }: { poll: Poll; options: Option[]; viewerName: string; viewerVote: Vote | null })}
+{#snippet VoteForm({ poll, options, viewerName, viewerVote, inviteBallot }: { poll: Poll; options: Option[]; viewerName: string; viewerVote: Vote | null; inviteBallot: boolean })}
   {@const currentBallot = ballotObject(viewerVote?.ballot)}
   {@const currentSelected = new Set(Array.isArray(currentBallot.selected) ? currentBallot.selected.map(Number) : [])}
   {@const currentScores = ballotObject(currentBallot.scores)}
@@ -141,7 +191,11 @@
   {@const currentRankings = Array.isArray(currentBallot.rankings) ? currentBallot.rankings.map(Number) : []}
   {@const currentAvailability = ballotObject(currentBallot.availability)}
   <form method="post" action="?/vote">
-    <label>Your display name <input name="voterName" required value={viewerName} /></label>
+    {#if inviteBallot}
+      <p>Voting as <strong>{viewerName || "your invited name"}</strong></p>
+    {:else}
+      <label>Your display name <input name="voterName" required value={viewerName} /></label>
+    {/if}
 
     {#if ["sense_check", "consent", "consensus", "majority"].includes(poll.type)}
       <fieldset>
