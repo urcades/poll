@@ -38,8 +38,6 @@ export interface PollConfig {
   reasonMode: ReasonMode;
   quorumPercent: number;
   eligibleVoterCount: number;
-  allowComments: boolean;
-  allowReactions: boolean;
   shuffleOptions: boolean;
   minChoices?: number;
   maxChoices?: number;

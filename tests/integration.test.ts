@@ -1189,4 +1189,75 @@ describe("SvelteKit app integration", () => {
       }
     });
   });
+
+  describe("shuffled ballot order", () => {
+    const optionsText = "A\nB\nC\nD\nE\nF\nG\nH";
+
+    async function shuffledPoll(overrides: Record<string, unknown> = {}) {
+      const { id } = await createPoll({ optionsText, shuffleOptions: true, ...overrides });
+      await openPoll(id);
+      return id;
+    }
+
+    const labels = (options: Array<{ label: string }>) => options.map((option) => option.label);
+
+    test("order is stable for one browser, a permutation, and differs across browsers", async () => {
+      storeFixture();
+      const id = await shuffledPoll();
+      const first = await loadPoll(id, cookies);
+      const again = await loadPoll(id, cookies);
+      expect(labels(again.ballotOptions)).toEqual(labels(first.ballotOptions));
+      expect([...labels(first.ballotOptions)].sort()).toEqual(labels(first.options));
+      expect(labels(first.options)).toEqual(["A", "B", "C", "D", "E", "F", "G", "H"]);
+
+      const orders = new Set([labels(first.ballotOptions).join("")]);
+      for (let index = 0; index < 5; index += 1) orders.add(labels((await loadPoll(id, cookieJar())).ballotOptions).join(""));
+      expect(orders.size).toBeGreaterThan(1);
+    });
+
+    test("order survives voting, and results and exports keep canonical order", async () => {
+      const db = storeFixture();
+      const id = await shuffledPoll({ type: "approval" });
+      const before = labels((await loadPoll(id, cookies)).ballotOptions);
+      const options = db.getOptions(pid(db, id));
+      await postJson(voteRoute, { id }, { voterName: "Ada", selected: [String(options[0]!.id)] });
+      const page = await loadPoll(id, cookies);
+      expect(labels(page.ballotOptions)).toEqual(before);
+      expect(page.tally?.rows.map((row) => row.label)).toEqual(labels(options));
+      await closePoll(id);
+      const exported = await (await getExport(exportJsonRoute, id)).json() as { results?: { rows: Array<{ label: string }> } };
+      if (exported.results) expect(labels(exported.results.rows)).toEqual(labels(options));
+    });
+
+    test("polls without the flag and proposal types are never shuffled", async () => {
+      storeFixture();
+      const plain = await createPoll({ optionsText });
+      await openPoll(plain.id);
+      const plainPage = await loadPoll(plain.id, cookieJar());
+      expect(labels(plainPage.ballotOptions)).toEqual(labels(plainPage.options));
+
+      const proposal = await createPoll({ type: "consent", title: "Prop", optionsText: "Consent\nObjection", shuffleOptions: true });
+      await openPoll(proposal.id);
+      const page = await loadPoll(proposal.id, cookieJar());
+      expect(page.poll.config.shuffleOptions).toBe(false);
+      expect(labels(page.ballotOptions)).toEqual(labels(page.options));
+    });
+  });
+
+  test("old configs with removed allowComments/allowReactions flags still load and vote", async () => {
+    const db = storeFixture();
+    const { id } = await createPoll();
+    await openPoll(id);
+    const config = { ...db.getPollBySlug(id)!.config, allowComments: true, allowReactions: true };
+    db.db.query("UPDATE polls SET config_json = ? WHERE slug = ?").run(JSON.stringify(config), id);
+    const page = await loadPoll(id, cookieJar());
+    expect(page.poll.title).toBe("Dinner");
+    const options = db.getOptions(pid(db, id));
+    const response = await postJson(voteRoute, { id }, { voterName: "Ada", selected: [String(options[0]!.id)] });
+    expect(response.status).toBe(200);
+    expect((await loadPoll(id, cookies)).tally?.castVotes).toBe(1);
+    // Saving a new poll no longer writes them.
+    const fresh = await createPoll({ allowComments: "on" });
+    expect("allowComments" in db.getPollBySlug(fresh.id)!.config).toBe(false);
+  });
 });

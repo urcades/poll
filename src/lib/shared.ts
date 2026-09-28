@@ -64,3 +64,97 @@ export function resultCells(tally: PublicTallyResult, row: PublicTallyResult["ro
 export function roundTallies(log: RoundLog): string {
   return JSON.stringify(formatTallies(log.tallies));
 }
+
+export interface BarSegment {
+  kind: "main" | "available" | "if_needed" | "unavailable";
+  /** Share of the full track, 0-100. */
+  percent: number;
+}
+
+export interface ResultBar {
+  optionId: number;
+  label: string;
+  segments: BarSegment[];
+  /** Plain-text value shown next to the bar. */
+  text: string;
+}
+
+const clampPercent = (value: number) => Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
+
+/** One compact bar per result row, showing the poll type's key metric. */
+export function resultBars(tally: PublicTallyResult, poll: Poll): ResultBar[] {
+  return tally.rows.map((row) => {
+    const base = { optionId: row.optionId, label: row.label };
+    if (tally.type === "time_poll") {
+      const available = row.available ?? 0;
+      const ifNeeded = row.ifNeeded ?? 0;
+      const unavailable = row.unavailable ?? 0;
+      const total = available + ifNeeded + unavailable || 1;
+      return {
+        ...base,
+        segments: [
+          { kind: "available", percent: (available / total) * 100 },
+          { kind: "if_needed", percent: (ifNeeded / total) * 100 },
+          { kind: "unavailable", percent: (unavailable / total) * 100 }
+        ],
+        text: `${available} / ${ifNeeded} / ${unavailable}`
+      };
+    }
+    if (tally.type === "score") {
+      const min = poll.config.scoreMin ?? 0;
+      const max = poll.config.scoreMax ?? 5;
+      const share = max > min ? ((row.mean ?? 0) - min) / (max - min) * 100 : 0;
+      return { ...base, segments: [{ kind: "main", percent: clampPercent(share) }], text: `mean ${formatNumber(row.mean ?? 0)}` };
+    }
+    if (tally.type === "irv" || tally.type === "stv") {
+      const share = tally.castVotes > 0 ? ((row.finalTally ?? 0) / tally.castVotes) * 100 : 0;
+      return { ...base, segments: [{ kind: "main", percent: clampPercent(share) }], text: formatNumber(row.finalTally ?? 0) };
+    }
+    const percent = row.percent ?? 0;
+    return { ...base, segments: [{ kind: "main", percent: clampPercent(percent) }], text: `${formatNumber(percent)}%` };
+  });
+}
+
+export interface RoundBar {
+  optionId: number;
+  label: string;
+  value: number;
+  mark: "elected" | "eliminated" | null;
+}
+
+export interface RoundStage {
+  round: number;
+  bars: RoundBar[];
+  /** Majority (IRV) or quota (STV) line, when known. */
+  threshold: number | null;
+}
+
+/** Round-by-round view of an IRV/STV count, derived from `tally.roundLogs`. */
+export function roundStages(tally: PublicTallyResult): RoundStage[] {
+  const logs = tally.roundLogs ?? [];
+  const rows = tally.rows;
+  const byLabel = new Map(rows.map((row) => [row.label, row.optionId]));
+  const removed = new Set<number>();
+  const stages: RoundStage[] = [];
+  const rounds = [...new Set(logs.map((log) => log.round))];
+  for (const round of rounds) {
+    const group = logs.filter((log) => log.round === round);
+    const first = group[0];
+    if (!first) continue;
+    const marks = new Map<number, "elected" | "eliminated">();
+    for (const row of rows) if (row.electedRound === round) marks.set(row.optionId, "elected");
+    for (const log of group) {
+      const match = /^eliminate (.+)$/.exec(log.action);
+      const id = match ? byLabel.get(match[1] ?? "") : undefined;
+      if (id !== undefined) marks.set(id, "eliminated");
+    }
+    const bars = rows
+      .filter((row) => !removed.has(row.optionId))
+      .map((row) => ({ optionId: row.optionId, label: row.label, value: first.tallies[row.optionId] ?? 0, mark: marks.get(row.optionId) ?? null }))
+      .sort((a, b) => b.value - a.value);
+    const threshold = tally.type === "irv" ? bars.reduce((sum, bar) => sum + bar.value, 0) / 2 : tally.quota ?? null;
+    stages.push({ round, bars, threshold });
+    for (const id of marks.keys()) removed.add(id);
+  }
+  return stages;
+}

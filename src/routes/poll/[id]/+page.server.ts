@@ -1,5 +1,5 @@
 import { error, fail, redirect } from "@sveltejs/kit";
-import { addInviteesOrThrow, adminCookieToken, canShowResults, closePollOrThrow, currentInvite, deletePollOrThrow, getStore, grantAdminFromUrl, grantInviteFromUrl, InviteRequiredError, invitationsFor, isPollAdmin, openPollOrThrow, publicTally, submitVote, tallyFor, voteTokenFor, voterNameFor } from "$lib/server/app";
+import { addInviteesOrThrow, adminCookieToken, ballotOptionsFor, canShowResults, closePollOrThrow, currentInvite, deletePollOrThrow, getStore, grantAdminFromUrl, grantInviteFromUrl, InviteRequiredError, invitationsFor, isPollAdmin, openPollOrThrow, publicTally, submitVote, tallyFor, voteTokenFor, voterNameFor } from "$lib/server/app";
 import { isOpen } from "$lib/shared";
 import type { Actions, PageServerLoad } from "./$types";
 
@@ -27,6 +27,8 @@ export const load = (({ params, url, cookies }) => {
   return {
     poll,
     options,
+    /** Options in this viewer's ballot order (shuffled when the poll asks for it); results use `options`. */
+    ballotOptions: ballotOptionsFor(poll, options, cookies),
     voteCount: votes.length,
     viewerName,
     viewerVote,

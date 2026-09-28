@@ -4,6 +4,9 @@
   import { invalidateAll } from "$app/navigation";
   import { Button, Table, tableColumn, tableColumns } from "@flowercomputer/flowerparts";
   import AppPageHeader from "$lib/AppPageHeader.svelte";
+  import RankBallot from "$lib/RankBallot.svelte";
+  import ResultBars from "$lib/ResultBars.svelte";
+  import RoundChart from "$lib/RoundChart.svelte";
   import { formatNumber } from "../../../tally";
   import { templateByType } from "../../../templates";
   import type { SubmitFunction } from "@sveltejs/kit";
@@ -133,7 +136,7 @@
     <h2>Draft preview</h2>
     <p class="hint">This is the voter-facing ballot preview. Voting is disabled until you open voting.</p>
     <div inert aria-disabled="true">
-      {@render VoteForm({ poll: data.poll, options: data.options, viewerName: "", viewerVote: null, inviteBallot: false })}
+      {@render VoteForm({ poll: data.poll, options: data.ballotOptions, viewerName: "", viewerVote: null, inviteBallot: false })}
     </div>
   </section>
   <section>
@@ -147,7 +150,7 @@
       {#if data.inviteRequired}
         <p>This poll is invite-only. Use the personal link you were sent.</p>
       {:else}
-        {@render VoteForm({ poll: data.poll, options: data.options, viewerName: data.viewerName, viewerVote: data.viewerVote, inviteBallot: data.poll.config.voterMode === "invite" })}
+        {@render VoteForm({ poll: data.poll, options: data.ballotOptions, viewerName: data.viewerName, viewerVote: data.viewerVote, inviteBallot: data.poll.config.voterMode === "invite" })}
       {/if}
     {:else}
       <p>Voting is not open.</p>
@@ -278,18 +281,7 @@
       {@const maxRanks = poll.type === "rank" ? (poll.config.rankCount ?? options.length) : options.length}
       <fieldset>
         <legend>Rank options</legend>
-        <p class="hint">Put each option in at most one rank. Rank 1 is most preferred.</p>
-        {#each Array.from({ length: maxRanks }, (_, index) => index) as index (index)}
-          <label>
-            Rank {index + 1}
-            <select name={`rank_${index + 1}`}>
-              <option value="">No selection</option>
-              {#each options as option (option.id)}
-                <option value={option.id} selected={currentRankings[index] === option.id}>{option.label}</option>
-              {/each}
-            </select>
-          </label>
-        {/each}
+        <RankBallot {options} {maxRanks} initial={currentRankings} limited={poll.type === "rank"} />
       </fieldset>
     {:else if poll.type === "time_poll"}
       <fieldset>
@@ -323,6 +315,7 @@
   {#if tally.quota}
     <p>Quota: {formatNumber(tally.quota)}</p>
   {/if}
+  <ResultBars {tally} {poll} />
   <Table
     label="Poll results"
     items={tally.rows}
@@ -343,6 +336,12 @@
     {/snippet}
   </Table>
   {#if tally.roundLogs?.length}
+    {#if tally.type === "irv" || tally.type === "stv"}
+      <details open>
+        <summary>Round by round</summary>
+        <RoundChart {tally} />
+      </details>
+    {/if}
     <details>
       <summary>Round log</summary>
       <Table

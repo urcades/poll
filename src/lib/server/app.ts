@@ -4,6 +4,7 @@ import { baseConfig, defaultConfigFor, templateByType } from "../../templates";
 import { tallyPoll, validateBallot } from "../../tally";
 import { isProposalType, POLL_TYPES, type Invite, type Option, type Poll, type PollConfig, type PollType, type PublicTallyResult, type TallyResult, type Vote } from "../../types";
 import { isClosed, isOpen } from "../shared";
+import { seededShuffle } from "../shuffle";
 
 let store: Store | null = null;
 
@@ -257,6 +258,26 @@ export function voterNameFor(cookies: Cookies, pollId: number): string {
   }
 }
 
+export function shuffleSeedCookie(pollId: number): string {
+  return `poll_${pollId}_shuffle_seed`;
+}
+
+/**
+ * Options in the order this browser should see them. With shuffling on (and
+ * not a proposal type, whose positions are fixed) the order is a deterministic
+ * shuffle seeded by the poll slug plus a per-poll random cookie minted on first
+ * view, so it is stable across reloads and differs between voters.
+ */
+export function ballotOptionsFor(poll: Poll, options: Option[], cookies: Cookies): Option[] {
+  if (!poll.config.shuffleOptions || isProposalType(poll.type) || poll.status === "draft") return options;
+  let seed = cookies.get(shuffleSeedCookie(poll.id)) ?? "";
+  if (!seed) {
+    seed = crypto.randomUUID();
+    cookies.set(shuffleSeedCookie(poll.id), seed, TOKEN_COOKIE_OPTIONS);
+  }
+  return seededShuffle(options, `${poll.slug}:${seed}`);
+}
+
 export function voteTokenFor(cookies: Cookies, pollId: number): string {
   return cookies.get(voteTokenCookie(pollId)) ?? "";
 }
@@ -503,9 +524,7 @@ function parseConfig(type: PollType, data: Record<string, unknown>): PollConfig 
   config.quorumPercent = intField(data.quorumPercent, 0, 0, 100);
   // Invite mode counts the invitees instead; drop the typed value so it cannot disagree.
   config.eligibleVoterCount = config.voterMode === "invite" ? 0 : intField(data.eligibleVoterCount, 0, 0, 1_000_000);
-  config.allowComments = boolField(data.allowComments);
-  config.allowReactions = boolField(data.allowReactions);
-  config.shuffleOptions = boolField(data.shuffleOptions);
+  config.shuffleOptions = !isProposalType(type) && boolField(data.shuffleOptions);
   if (type === "choose") {
     config.minChoices = intField(data.minChoices, 1, 0, 1000);
     config.maxChoices = intField(data.maxChoices, 1, 0, 1000);

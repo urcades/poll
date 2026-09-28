@@ -19,8 +19,6 @@ export const baseConfig: PollConfig = {
   reasonMode: "optional",
   quorumPercent: 0,
   eligibleVoterCount: 0,
-  allowComments: false,
-  allowReactions: false,
   shuffleOptions: false
 };
 

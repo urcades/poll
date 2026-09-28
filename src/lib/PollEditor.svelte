@@ -369,14 +369,10 @@
         <p class="field-help">The number of people allowed or expected to vote. This app uses it with quorum percent to calculate how many votes are needed.</p>
       {/if}
 
-      <label><input type="checkbox" name="allowComments" checked={values.config.allowComments} /> Allow comments flag</label>
-      <p class="field-help">Stores whether this poll should allow comments. Comment threads are not implemented in this minimal version.</p>
-
-      <label><input type="checkbox" name="allowReactions" checked={values.config.allowReactions} /> Allow reactions flag</label>
-      <p class="field-help">Stores whether this poll should allow lightweight reactions. Reaction UI is not implemented in this minimal version.</p>
-
-      <label><input type="checkbox" name="shuffleOptions" checked={values.config.shuffleOptions} /> Shuffle options flag</label>
-      <p class="field-help">Stores whether options should be randomized for voters. This minimal version keeps the displayed order stable.</p>
+      {#if !fixed}
+        <label><input type="checkbox" name="shuffleOptions" checked={values.config.shuffleOptions} /> Shuffle option order for each voter</label>
+        <p class="field-help">Each voter sees the ballot options in their own random order, which stays the same when they reload. Results and exports keep the order you entered.</p>
+      {/if}
     </fieldset>
   </details>
 
