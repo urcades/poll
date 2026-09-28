@@ -114,13 +114,7 @@
 
 <MetaTags {meta} noindex />
 
-<AppPageHeader title={data.poll.title} backHref={resolve("/")} backLabel="Back to home">
-  {#snippet right()}
-    {#if data.isAdmin}
-      {@render PollActions({ poll: data.poll })}
-    {/if}
-  {/snippet}
-</AppPageHeader>
+<AppPageHeader title={data.poll.title} backHref={resolve("/")} backLabel="Back to home" right={data.isAdmin ? adminActions : undefined} />
 
 {#if form?.error}
   <p role="alert">{form.error}</p>
@@ -197,8 +191,8 @@
   <section>
     <h2>Export</h2>
     <p>
-      <a href={resolve("/poll/[id]/export.json", { id: data.poll.slug })}>Export JSON</a> ·
-      <a href={resolve("/poll/[id]/export.csv", { id: data.poll.slug })}>Export CSV</a>
+      <a href={resolve("/poll/[id]/export.json", { id: data.poll.slug })} data-sveltekit-reload>Export JSON</a> ·
+      <a href={resolve("/poll/[id]/export.csv", { id: data.poll.slug })} data-sveltekit-reload>Export CSV</a>
     </p>
   </section>
 {/if}
@@ -239,6 +233,10 @@
     <p><a href={data.adminLink}>{data.adminLink}</a></p>
   </section>
 {/if}
+
+{#snippet adminActions()}
+  {@render PollActions({ poll: data.poll })}
+{/snippet}
 
 {#snippet PollActions({ poll }: { poll: Poll })}
   <div class="actions">

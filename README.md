@@ -167,6 +167,15 @@ Run tests:
 bun test
 ```
 
+Run the browser end-to-end tests (Playwright, Chromium):
+
+```bash
+bunx playwright install chromium   # once
+bun run test:e2e
+```
+
+The suite builds the app and runs the production server (`node build/index.js`, so the strict Content-Security-Policy is in force) on `127.0.0.1:4319` with `RATE_LIMIT=off` and a throwaway SQLite database in the OS temp directory that is deleted afterwards; `work/votes.sqlite` is never touched. Each test drives separate browser contexts as different people, fails on any console error or CSP violation, and a 375px phone project checks for horizontal scrolling. Override the port with `E2E_PORT`. Specs live in `e2e/*.e2e.ts`, so `bun test` (which only runs `tests/`) does not pick them up. In CI they run as a separate `e2e` job that uploads the Playwright report on failure.
+
 Build for production:
 
 ```bash
@@ -201,3 +210,4 @@ Anonymous voting mode hides voter names and reasons in results and exports, but 
 - `src/lib/ics.ts`: iCalendar writer (escaping, line folding) used by the `.ics` route.
 - `static/og.png`: the generic link-preview image.
 - `tests/`: deterministic tally and route-level integration tests.
+- `e2e/`: Playwright browser tests against the production build (`playwright.config.ts` at the root).
