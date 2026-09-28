@@ -12,6 +12,8 @@ primary_region = "ewr"
   HOST = "0.0.0.0"
   PORT = "8080"
   DB_PATH = "/data/votes.sqlite"
+  # Fly's proxy sets Fly-Client-IP; needed for per-IP rate limiting.
+  ADDRESS_HEADER = "Fly-Client-IP"
 
 [[mounts]]
   source = "poll_data"

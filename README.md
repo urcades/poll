@@ -82,6 +82,16 @@ DB_PATH=/Users/edouard/Developer/poll/work/votes.sqlite \
 node build/index.js
 ```
 
+Because Caddy connects from loopback, the app would otherwise see every visitor as `127.0.0.1`, and rate limiting would count everyone together. Tell adapter-node to trust the proxy's `X-Forwarded-For` header (Caddy's `reverse_proxy` sets it to the real client address) by adding:
+
+```bash
+ADDRESS_HEADER=X-Forwarded-For XFF_DEPTH=1
+```
+
+`XFF_DEPTH=1` means exactly one trusted proxy (Caddy) sits in front, so the last entry in the header is used. That entry is written by Caddy and cannot be spoofed by clients. Only set these when the app is reachable exclusively through the proxy (keep `HOST=127.0.0.1`).
+
+Rate limiting is per client IP and in-memory. Defaults: 10 poll creations per 10 minutes and 60 other mutating requests per minute. Tune with `RATE_LIMIT_CREATE_MAX`, `RATE_LIMIT_CREATE_WINDOW_SECONDS`, `RATE_LIMIT_MUTATE_MAX`, `RATE_LIMIT_MUTATE_WINDOW_SECONDS`, or disable with `RATE_LIMIT=off`.
+
 Use a LaunchAgent, systemd unit, or another process manager for long-running use. The important details are that `HOST` stays on `127.0.0.1`, `PORT` matches the Caddy upstream, and `DB_PATH` points at the SQLite database you want to keep.
 
 Example Caddy site using a Tailscale certificate:
@@ -108,6 +118,8 @@ https://violaceae-1.saga-owl.ts.net:10000/
 If adapting this for another machine, replace the hostname, Tailscale IP, certificate paths, and ports. The raw Tailscale IP is useful for binding Caddy, but the `.ts.net` hostname is the better browser URL because it matches the trusted certificate.
 
 ## Deploying To Fly.io
+
+`fly.toml` sets `ADDRESS_HEADER=Fly-Client-IP` so rate limiting sees the real client address.
 
 The repo ships a `Dockerfile` (Bun build stage, Node runtime) and a `fly.toml`. The app is a single stateful process with SQLite on a volume, so keep it at exactly one machine.
 
