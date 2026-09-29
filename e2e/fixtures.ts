@@ -131,8 +131,9 @@ export function voteForm(page: Page): Locator {
   return page.locator("form[action='?/vote']");
 }
 
+/** The vote button is the page's primary action, in the header. */
 export async function submitVote(page: Page, button: "Submit vote" | "Update vote" = "Submit vote") {
-  await voteForm(page).getByRole("button", { name: button }).click();
+  await page.getByRole("button", { name: button, exact: true }).click();
 }
 
 /** Waits for SvelteKit to hydrate, so form enhancement is active before interacting. */

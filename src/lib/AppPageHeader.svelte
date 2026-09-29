@@ -1,24 +1,18 @@
 <script lang="ts">
   import { Button, CaretLeft, PageHeader } from "@flowercomputer/flowerparts";
-  import type { Snippet } from "svelte";
+  import PrimaryAction, { type Primary } from "./PrimaryAction.svelte";
 
   type Props = {
     title: string;
     backHref?: string;
     backLabel?: string;
-    right?: Snippet;
+    /** The page's one primary action, shown in the header's right corner. */
+    primary?: Primary | null;
   };
 
-  let {
-    title,
-    backHref,
-    backLabel = "Back",
-    right: actions
-  }: Props = $props();
+  let { title, backHref, backLabel = "Back", primary }: Props = $props();
 </script>
 
-<!-- Actions render inline: pages keep at most one or two header actions, so a
-     collapsed "Actions" popover would only hide them. -->
 <PageHeader ariaLabel={`${title} page header`} sticky>
   {#snippet left()}
     {#if backHref}
@@ -28,32 +22,67 @@
   {/snippet}
 
   {#snippet right()}
-    {@render actions?.()}
+    {#if primary}
+      <PrimaryAction {...primary} />
+    {/if}
   {/snippet}
 </PageHeader>
 
 <style>
   /* Same type treatment as section headings (h2). */
   .page-header-title {
+    grid-area: title;
     min-inline-size: 0;
     margin: 0;
-    padding-inline: var(--page-header-gap, 9px);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    text-align: center;
     color: var(--color-ink);
     font-size: 15px;
     font-weight: 600;
     line-height: 1.3;
   }
 
-  /* Line the header up with the page content: same side gutter, and a bare
-     title (no back button) starts flush with the text below it. */
+  /* Three columns with equal sides, so the title sits at the exact center
+     whatever the back button and primary action measure. The title column
+     leaves room for side controls up to --header-side wide, then truncates. */
   :global(body .page-header.page-header) {
+    --header-side: 10rem;
+    grid-template-columns: 1fr fit-content(calc(100% - 2 * var(--header-side))) 1fr;
+    grid-template-areas: "start title end";
+    column-gap: var(--space-3, 12px);
     padding-inline: var(--gutter, 16px);
   }
 
-  .page-header-title:first-child {
-    padding-inline-start: 0;
+  :global(body .page-header .page-header-cluster-left) {
+    display: contents;
+  }
+
+  :global(body .page-header .page-header-cluster-left > .button) {
+    grid-area: start;
+    justify-self: start;
+  }
+
+  :global(body .page-header .page-header-spacer) {
+    display: none;
+  }
+
+  :global(body .page-header .page-header-cluster-right) {
+    grid-area: end;
+    justify-self: end;
+  }
+
+  /* Phones: controls on the first row, the full title centered below. */
+  @media (max-width: 480px) {
+    :global(body .page-header.page-header) {
+      grid-template-columns: 1fr auto;
+      grid-template-areas: "start end" "title title";
+      row-gap: var(--space-1, 4px);
+    }
+
+    .page-header-title {
+      white-space: normal;
+    }
   }
 </style>

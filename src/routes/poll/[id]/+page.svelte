@@ -8,6 +8,7 @@
   import LocalTime from "$lib/LocalTime.svelte";
   import MetaTags from "$lib/MetaTags.svelte";
   import PollResults from "$lib/PollResults.svelte";
+  import type { Primary } from "$lib/PrimaryAction.svelte";
   import RankBallot from "$lib/RankBallot.svelte";
   import { templateByType } from "../../../templates";
   import type { SubmitFunction } from "@sveltejs/kit";
@@ -26,6 +27,19 @@
 
   const voteForm = pendingForm();
   const adminForm = pendingForm();
+
+  // The one primary action for this viewer, shown in the header: open a draft,
+  // cast a vote, close a poll you cannot vote in, or share final results.
+  const canVote = $derived(isOpen(data.poll) && !data.inviteRequired);
+  const primary = $derived.by((): Primary | null => {
+    const poll = data.poll;
+    if (poll.status === "draft" && data.isAdmin) return { label: "Open voting", form: "open-poll", pending: adminForm.pending };
+    if (canVote) return { label: data.viewerVote ? "Update vote" : "Submit vote", form: "vote-form", pending: voteForm.pending };
+    if (data.isAdmin && poll.status === "open" && !isClosed(poll)) return { label: "Close poll", form: "close-poll", pending: adminForm.pending };
+    if (isClosed(poll) && data.showResults) return { label: "Share results", href: resolve("/poll/[id]/results", { id: poll.slug }) };
+    return null;
+  });
+  const hasCalendar = $derived(calendarReady && isClosed(data.poll) && data.showResults && Boolean(data.tally?.rows[0]) && (data.tally?.rows[0]?.available ?? 0) + (data.tally?.rows[0]?.ifNeeded ?? 0) > 0);
 
   // Keep vote counts and results fresh for everyone with the page open. A cheap
   // version probe runs every 5s; the full load only reruns when it changed, and
@@ -114,7 +128,7 @@
 
 <MetaTags {meta} noindex />
 
-<AppPageHeader title={data.poll.title} backHref={resolve("/")} backLabel="Back to home" />
+<AppPageHeader title={data.poll.title} backHref={resolve("/")} backLabel="Back to home" {primary} />
 
 {#if form?.error}
   <p role="alert">{form.error}</p>
@@ -182,7 +196,7 @@
       {#if data.inviteRequired}
         <p>This poll is invite-only. Use the personal link you were sent.</p>
       {:else}
-        {@render VoteForm({ poll: data.poll, options: data.ballotOptions, viewerName: data.viewerName, viewerVote: data.viewerVote, inviteBallot: data.poll.config.voterMode === "invite" })}
+        {@render VoteForm({ poll: data.poll, options: data.ballotOptions, viewerName: data.viewerName, viewerVote: data.viewerVote, inviteBallot: data.poll.config.voterMode === "invite", id: "vote-form" })}
       {/if}
     {:else}
       <p>Voting is not open.</p>
@@ -194,16 +208,10 @@
   </section>
 {/if}
 
-{#if isClosed(data.poll) && data.showResults}
+{#if hasCalendar}
   <section>
-    <h2>Share</h2>
-    <p>
-      <a href={resolve("/poll/[id]/results", { id: data.poll.slug })}>Share results</a>
-      <span class="hint"> (a read-only page with just the outcome and charts)</span>
-    </p>
-    {#if calendarReady && data.tally?.rows[0] && (data.tally.rows[0].available ?? 0) + (data.tally.rows[0].ifNeeded ?? 0) > 0}
-      <p><a href={resolve("/poll/[id]/event.ics", { id: data.poll.slug })} download>Add the winning timeslot to your calendar (.ics)</a></p>
-    {/if}
+    <h2>Calendar</h2>
+    <p><a href={resolve("/poll/[id]/event.ics", { id: data.poll.slug })} download>Add the winning timeslot to your calendar (.ics)</a></p>
   </section>
 {/if}
 
@@ -240,28 +248,30 @@
   <div class="actions">
     {#if poll.status === "draft"}
       <Button href={resolve("/poll/[id]/edit", { id: poll.slug })} variant="secondary">Edit draft</Button>
-      <form method="post" action="?/open" use:enhance={adminForm.enhance}><Button type="submit" variant="primary" disabled={adminForm.pending}>Open voting</Button></form>
+      <form id="open-poll" method="post" action="?/open" use:enhance={adminForm.enhance}></form>
       {#if poll.opensAt}
         <form method="post" action="?/schedule" use:enhance={adminForm.enhance}><Button type="submit" variant="secondary" disabled={adminForm.pending}>Schedule</Button></form>
       {/if}
     {:else if poll.status === "scheduled"}
       <form method="post" action="?/unschedule" use:enhance={adminForm.enhance}><Button type="submit" variant="secondary" disabled={adminForm.pending}>Unschedule</Button></form>
     {:else if !isClosed(poll)}
-      <form method="post" action="?/close" use:enhance={adminForm.enhance}><Button type="submit" variant="secondary" disabled={adminForm.pending}>Close poll</Button></form>
+      <form id="close-poll" method="post" action="?/close" use:enhance={adminForm.enhance}>
+        {#if primary?.form !== "close-poll"}<Button type="submit" variant="secondary" disabled={adminForm.pending}>Close poll</Button>{/if}
+      </form>
     {/if}
     <form method="post" action="?/duplicate" use:enhance={adminForm.enhance}><Button type="submit" variant="secondary" disabled={adminForm.pending}>Duplicate</Button></form>
     <form method="post" action="?/delete" use:enhance={confirmedDelete}><Button type="submit" variant="secondary" disabled={adminForm.pending}>Delete</Button></form>
   </div>
 {/snippet}
 
-{#snippet VoteForm({ poll, options, viewerName, viewerVote, inviteBallot }: { poll: Poll; options: Option[]; viewerName: string; viewerVote: Vote | null; inviteBallot: boolean })}
+{#snippet VoteForm({ poll, options, viewerName, viewerVote, inviteBallot, id }: { poll: Poll; options: Option[]; viewerName: string; viewerVote: Vote | null; inviteBallot: boolean; id?: string })}
   {@const currentBallot = ballotObject(viewerVote?.ballot)}
   {@const currentSelected = new Set(Array.isArray(currentBallot.selected) ? currentBallot.selected.map(Number) : [])}
   {@const currentScores = ballotObject(currentBallot.scores)}
   {@const currentAllocations = ballotObject(currentBallot.allocations)}
   {@const currentRankings = Array.isArray(currentBallot.rankings) ? currentBallot.rankings.map(Number) : []}
   {@const currentAvailability = ballotObject(currentBallot.availability)}
-  <form method="post" action="?/vote" use:enhance={voteForm.enhance}>
+  <form {id} method="post" action="?/vote" use:enhance={voteForm.enhance}>
     {#if inviteBallot}
       <p>Voting as <strong>{viewerName || "your invited name"}</strong></p>
     {:else}
@@ -335,7 +345,6 @@
       </label>
     {/if}
 
-    <Button type="submit" variant="primary" disabled={voteForm.pending}>{viewerVote ? "Update vote" : "Submit vote"}</Button>
   </form>
 {/snippet}
 

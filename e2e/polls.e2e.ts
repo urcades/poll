@@ -10,7 +10,7 @@ async function vote(person: Person, slug: string, name: string, ...labels: strin
   await form.getByLabel("Your display name").fill(name);
   for (const label of labels) await form.getByLabel(label, { exact: true }).check();
   await submitVote(page);
-  await expect(voteForm(page).getByRole("button", { name: "Update vote" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Update vote" })).toBeVisible();
 }
 
 /** Value cell of a results row, addressed by its option label. */
@@ -32,7 +32,7 @@ test("choose poll: draft, edit, open, vote, update, name clash, close, results, 
   await expect(A.page).toHaveURL(new RegExp(`/poll/${slug}/edit$`));
   const edited = `${title} (edited)`;
   await A.page.getByLabel("Title", { exact: true }).fill(edited);
-  await A.page.getByRole("button", { name: "Save draft changes" }).click();
+  await A.page.getByRole("button", { name: "Save changes" }).click();
   await expect(A.page).toHaveURL(new RegExp(`/poll/${slug}$`));
   await expect(A.page.getByText(edited, { exact: true }).first()).toBeVisible();
 
@@ -150,7 +150,7 @@ test("IRV: rank with clicks and keyboard, close, winner and rounds", async ({ pe
     await prepare(p);
     await expect(ranked(p)).toHaveText(expected);
     await submitVote(p.page);
-    await expect(voteForm(p.page).getByRole("button", { name: "Update vote" })).toBeVisible();
+    await expect(p.page.getByRole("button", { name: "Update vote" })).toBeVisible();
     // The saved ranking survives a reload.
     await p.page.reload();
     await expect(ranked(p)).toHaveText(expected);
@@ -241,7 +241,7 @@ test("invite-only: strangers cannot vote, invitees vote through personal links",
   await expect(voteForm(invitee.page).getByLabel("Your display name")).toHaveCount(0);
   await voteForm(invitee.page).getByLabel("Option B", { exact: true }).check();
   await submitVote(invitee.page);
-  await expect(voteForm(invitee.page).getByRole("button", { name: "Update vote" })).toBeVisible();
+  await expect(invitee.page.getByRole("button", { name: "Update vote" })).toBeVisible();
 
   await admin.page.reload();
   await expect(admin.page.locator("#invitations")).toContainText("1 of 2");
@@ -330,7 +330,7 @@ test("time poll: pick slots, vote availability, close, download the .ics", async
       await form.locator(".slot").nth(index).getByRole("radio", { name: state, exact: true }).check();
     }
     await submitVote(p.page);
-    await expect(voteForm(p.page).getByRole("button", { name: "Update vote" })).toBeVisible();
+    await expect(p.page.getByRole("button", { name: "Update vote" })).toBeVisible();
   }
 
   await availability(ada, "Ada", ["unavailable", "available", "if needed"]);

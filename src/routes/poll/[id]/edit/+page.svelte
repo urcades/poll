@@ -5,16 +5,17 @@
   import type { PageProps } from "./$types";
 
   let { data, form }: PageProps = $props();
+  let pending = $state(false);
 </script>
 
 <svelte:head>
   <title>Edit {data.poll.title}</title>
 </svelte:head>
 
-<AppPageHeader title="Edit draft" backHref={resolve("/poll/[id]", { id: data.poll.slug })} backLabel="Back to preview" />
+<AppPageHeader title="Edit draft" backHref={resolve("/poll/[id]", { id: data.poll.slug })} backLabel="Back to preview" primary={{ label: "Save changes", form: "poll-editor", pending, pendingLabel: "Saving…" }} />
 
 {#if form?.error}
   <p role="alert">{form.error}</p>
 {/if}
 
-<PollEditor selected={data.selected} values={data.values} submitLabel="Save draft changes" />
+<PollEditor selected={data.selected} values={data.values} id="poll-editor" bind:pending />

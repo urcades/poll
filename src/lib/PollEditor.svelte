@@ -40,7 +40,8 @@
     action = "",
     selected,
     values,
-    submitLabel,
+    id,
+    pending = $bindable(false),
     freshDefaults = false
   }: {
     action?: string;
@@ -56,10 +57,15 @@
       inviteesText: string;
       config: PollConfig;
     };
-    submitLabel: string;
+    /** The page header's primary action submits the form by this id. */
+    id: string;
+    pending?: boolean;
   } = $props();
 
   const submit = pendingForm();
+  $effect(() => {
+    pending = submit.pending;
+  });
   const initial = untrack(() => ({ selected, values }));
 
   let selectedType = $state.raw(initial.selected);
@@ -211,7 +217,7 @@
 
 </script>
 
-<form method="post" {action} use:enhance={submit.enhance}>
+<form {id} method="post" {action} use:enhance={submit.enhance}>
   <section>
     <h2>Poll type</h2>
     <label>
@@ -462,5 +468,4 @@
     </div>
   </details>
 
-  <Button type="submit" variant="primary" disabled={submit.pending}>{submit.pending ? "Saving..." : submitLabel}</Button>
 </form>

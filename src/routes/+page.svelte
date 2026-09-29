@@ -1,6 +1,5 @@
 <script lang="ts">
   import { resolve } from "$app/paths";
-  import { Button } from "@flowercomputer/flowerparts";
   import { page } from "$app/state";
   import AppPageHeader from "$lib/AppPageHeader.svelte";
   import LocalTime from "$lib/LocalTime.svelte";
@@ -26,11 +25,7 @@
 
 <MetaTags {meta} />
 
-<AppPageHeader title="My votes">
-  {#snippet right()}
-    <Button href={resolve("/new")} variant="primary">New vote/proposal</Button>
-  {/snippet}
-</AppPageHeader>
+<AppPageHeader title="My votes" primary={{ label: "New vote/proposal", href: resolve("/new") }} />
 
 {#if isEmpty}
   <section>

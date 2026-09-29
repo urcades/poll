@@ -22,7 +22,7 @@ test("poll pages fit a 375px screen", async ({ page }) => {
   await form.getByLabel("Your display name").fill("Mobile Voter");
   await form.getByLabel("Option B", { exact: true }).check();
   await submitVote(page);
-  await expect(form.getByRole("button", { name: "Update vote" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Update vote" })).toBeVisible();
   await noHorizontalScroll(page, "after voting");
 
   await closePoll(page);
@@ -39,7 +39,7 @@ test("poll pages fit a 375px screen", async ({ page }) => {
   await irv.getByLabel("Your display name").fill("Rita");
   for (const label of ["Candidate A", "Candidate B"]) await irv.getByRole("button", { name: `${label}. Select to rank it.` }).click();
   await submitVote(page);
-  await expect(irv.getByRole("button", { name: "Update vote" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Update vote" })).toBeVisible();
   await closePoll(page);
   await page.getByText("Round log", { exact: true }).click();
   await noHorizontalScroll(page, "IRV results");
