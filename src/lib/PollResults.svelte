@@ -29,7 +29,7 @@
   <Table
     label="Poll results"
     items={tally.rows}
-    columns={tableColumns(...resultHeaders(tally).map(() => tableColumn.fill(1, "8rem")))}
+    columns={tableColumns(...resultHeaders(tally).map(() => tableColumn.fill(1, "5.5rem")))}
     getKey={(row) => row.optionId}
     stickyHeader={false}
   >

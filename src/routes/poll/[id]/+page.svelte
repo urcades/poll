@@ -114,13 +114,33 @@
 
 <MetaTags {meta} noindex />
 
-<AppPageHeader title={data.poll.title} backHref={resolve("/")} backLabel="Back to home" right={data.isAdmin ? adminActions : undefined} />
+<AppPageHeader title={data.poll.title} backHref={resolve("/")} backLabel="Back to home" />
 
 {#if form?.error}
   <p role="alert">{form.error}</p>
 {/if}
 
-<p>{template?.label ?? data.poll.type} · {statusLabel(data.poll)} · {data.voteCount} vote{data.voteCount === 1 ? "" : "s"}</p>
+<p class="lede">{template?.label ?? data.poll.type} · {statusLabel(data.poll)} · {data.voteCount} vote{data.voteCount === 1 ? "" : "s"}</p>
+
+{#if data.isAdmin}
+  <section>
+    <h2>Manage poll</h2>
+    {@render PollActions({ poll: data.poll })}
+    {#if isClosed(data.poll)}
+      <p>
+        Export results:
+        <a href={resolve("/poll/[id]/export.json", { id: data.poll.slug })} aria-label="Export JSON" data-sveltekit-reload>JSON</a> ·
+        <a href={resolve("/poll/[id]/export.csv", { id: data.poll.slug })} aria-label="Export CSV" data-sveltekit-reload>CSV</a>
+      </p>
+    {/if}
+    {#if data.adminLink}
+      <div class="field">
+        <p>Admin link: <a href={data.adminLink}>{data.adminLink}</a></p>
+        <p class="hint">Opening this link grants poll admin (open, close, edit, export) on another device. Keep it private; the plain poll URL is the one to share with voters.</p>
+      </div>
+    {/if}
+  </section>
+{/if}
 
 {#if data.poll.details}
   <section>
@@ -187,26 +207,16 @@
   </section>
 {/if}
 
-{#if isClosed(data.poll) && data.isAdmin}
-  <section>
-    <h2>Export</h2>
-    <p>
-      <a href={resolve("/poll/[id]/export.json", { id: data.poll.slug })} data-sveltekit-reload>Export JSON</a> ·
-      <a href={resolve("/poll/[id]/export.csv", { id: data.poll.slug })} data-sveltekit-reload>Export CSV</a>
-    </p>
-  </section>
-{/if}
-
 {#if data.invitations}
   <section id="invitations">
     <h2>Invitations</h2>
     <p><strong>{votedInvitees} of {data.invitations.length}</strong> invitees have voted.</p>
     <p class="hint">Each personal link lets one person vote as the name shown. Send each link only to that person. You can see who has voted (not what they voted), even in anonymous polls.{data.invitations.some((invitation) => invitation.link) ? "" : " Links are only shown to the poll's own admin, not to the instance operator."}</p>
-    <ul>
+    <ul class="plain-list">
       {#each data.invitations as invitation (invitation.name)}
-        <li class="row">
+        <li class="list-row">
           <strong>{invitation.name}</strong>
-          <span>{invitation.voted ? "voted" : "not voted"}</span>
+          <span class="meta">{invitation.voted ? "voted" : "not voted"}</span>
           {#if invitation.link}
             <a href={invitation.link}>personal link</a>
             <Button type="button" onclick={() => copyLink(invitation.name, invitation.link ?? "")}>{copiedName === invitation.name ? "Copied" : "Copy link"}</Button>
@@ -225,18 +235,6 @@
     {/if}
   </section>
 {/if}
-
-{#if data.adminLink}
-  <section>
-    <h2>Admin link</h2>
-    <p class="hint">Opening this link grants poll admin (open, close, edit, export) on another device. Keep it private; the plain poll URL is the one to share with voters.</p>
-    <p><a href={data.adminLink}>{data.adminLink}</a></p>
-  </section>
-{/if}
-
-{#snippet adminActions()}
-  {@render PollActions({ poll: data.poll })}
-{/snippet}
 
 {#snippet PollActions({ poll }: { poll: Poll })}
   <div class="actions">
@@ -276,7 +274,7 @@
         {#each options as option (option.id)}
           <label>
             <input type="radio" name="optionId" value={option.id} checked={Number(currentBallot.optionId ?? 0) === option.id} required />
-            {option.label}{option.meaning ? ` - ${option.meaning}` : ""}
+            {@render ChoiceText(option)}
           </label>
         {/each}
       </fieldset>
@@ -286,7 +284,7 @@
         {#each options as option (option.id)}
           <label>
             <input type="checkbox" name="selected" value={option.id} checked={currentSelected.has(option.id)} />
-            {option.label}{option.meaning ? ` - ${option.meaning}` : ""}
+            {@render ChoiceText(option)}
           </label>
         {/each}
       </fieldset>
@@ -296,14 +294,14 @@
       <fieldset>
         <legend>Score every option ({min}-{max})</legend>
         {#each options as option (option.id)}
-          <label>{option.label} <input type="number" name={`score_${option.id}`} min={min} max={max} value={String(currentScores[String(option.id)] ?? min)} required /></label>
+          <label class="inline-control">{option.label} <input type="number" name={`score_${option.id}`} min={min} max={max} value={String(currentScores[String(option.id)] ?? min)} required /></label>
         {/each}
       </fieldset>
     {:else if poll.type === "allocate"}
       <fieldset>
         <legend>Allocate up to {poll.config.pointBudget ?? 8} points</legend>
         {#each options as option (option.id)}
-          <label>{option.label} <input type="number" name={`allocation_${option.id}`} min="0" step="1" value={String(currentAllocations[String(option.id)] ?? 0)} /></label>
+          <label class="inline-control">{option.label} <input type="number" name={`allocation_${option.id}`} min="0" step="1" value={String(currentAllocations[String(option.id)] ?? 0)} /></label>
         {/each}
       </fieldset>
     {:else if poll.type === "rank" || poll.type === "irv" || poll.type === "stv"}
@@ -317,12 +315,14 @@
         <legend>Availability</legend>
         {#each options as option (option.id)}
           {@const current = String(currentAvailability[String(option.id)] ?? "unavailable")}
-          <div class="row">
+          <div class="slot">
             <strong><LocalTime value={option.label} {minutes} /></strong>
             {#if option.meaning}<span class="hint">{option.meaning}</span>{/if}
-            {#each ["available", "if_needed", "unavailable"] as state (state)}
-              <label><input type="radio" name={`availability_${option.id}`} value={state} checked={current === state} required /> {state.replace("_", " ")}</label>
-            {/each}
+            <div class="radio-options">
+              {#each ["available", "if_needed", "unavailable"] as state (state)}
+                <label><input type="radio" name={`availability_${option.id}`} value={state} checked={current === state} required /> {state.replace("_", " ")}</label>
+              {/each}
+            </div>
           </div>
         {/each}
       </fieldset>
@@ -337,4 +337,8 @@
 
     <Button type="submit" variant="primary" disabled={voteForm.pending}>{viewerVote ? "Update vote" : "Submit vote"}</Button>
   </form>
+{/snippet}
+
+{#snippet ChoiceText(option: Option)}
+  <span>{option.label}{#if option.meaning}<span class="choice-meaning">{option.meaning}</span>{/if}</span>
 {/snippet}

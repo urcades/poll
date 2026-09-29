@@ -1,4 +1,4 @@
-import { closePoll, createDraft, expect, headerAction, openVoting, slugOf, submitVote, test, voteForm, type Person } from "./fixtures";
+import { closePoll, createDraft, expect, pageAction, openVoting, slugOf, submitVote, test, voteForm, type Person } from "./fixtures";
 
 /** Titles are unique per test because every test shares one database. */
 const uniq = (title: string) => `${title} ${Math.random().toString(36).slice(2, 8)}`;
@@ -24,11 +24,11 @@ test("choose poll: draft, edit, open, vote, update, name clash, close, results, 
   const title = uniq("Lunch place");
 
   const slug = await createDraft(A.page, { title, details: "Where should we eat?" });
-  await headerAction(A.page, "button", "Open voting");
+  await pageAction(A.page, "button", "Open voting");
   await expect(A.page.getByText("Results will appear after voting opens")).toBeVisible();
 
   // Edit the draft.
-  await (await headerAction(A.page, "link", "Edit draft")).click();
+  await (await pageAction(A.page, "link", "Edit draft")).click();
   await expect(A.page).toHaveURL(new RegExp(`/poll/${slug}/edit$`));
   const edited = `${title} (edited)`;
   await A.page.getByLabel("Title", { exact: true }).fill(edited);
@@ -66,8 +66,8 @@ test("choose poll: draft, edit, open, vote, update, name clash, close, results, 
 
   // Bo has no admin controls.
   await B.page.reload();
-  await expect(B.page.getByRole("button", { name: "Actions", exact: true })).toHaveCount(0);
-  await expect(B.page.getByRole("heading", { name: "Admin link" })).toHaveCount(0);
+  await expect(B.page.getByRole("heading", { name: "Manage poll" })).toHaveCount(0);
+  await expect(B.page.getByText("Admin link:")).toHaveCount(0);
 
   // Admin closes; results show the final counts.
   await closePoll(A.page);
@@ -99,17 +99,17 @@ test("admin link grants admin in a new browser and is stripped from the URL", as
   const stranger = await person();
   await stranger.page.goto(`/poll/${slug}`);
   await expect(stranger.page.getByRole("heading", { name: "Draft preview" })).toBeVisible();
-  await expect(stranger.page.getByRole("button", { name: "Actions", exact: true })).toHaveCount(0);
+  await expect(stranger.page.getByRole("heading", { name: "Manage poll" })).toHaveCount(0);
 
   const other = await person();
   await other.page.goto(href!);
   await expect(other.page).toHaveURL(new RegExp(`/poll/${slug}$`));
   expect(other.page.url()).not.toContain("admin");
-  await headerAction(other.page, "button", "Open voting");
-  await headerAction(other.page, "link", "Edit draft");
+  await pageAction(other.page, "button", "Open voting");
+  await pageAction(other.page, "link", "Edit draft");
   // The cookie keeps working on a plain reload.
   await other.page.reload();
-  await headerAction(other.page, "button", "Open voting");
+  await pageAction(other.page, "button", "Open voting");
 });
 
 test("hide results until vote is cast", async ({ person }) => {
@@ -295,17 +295,17 @@ test("delete asks for confirmation", async ({ person }) => {
   const slug = await createDraft(A.page, { title });
 
   const asked = A.page.waitForEvent("dialog");
-  const clickDelete = (await headerAction(A.page, "button", "Delete")).click();
+  const clickDelete = (await pageAction(A.page, "button", "Delete")).click();
   const dialog = await asked;
   expect(dialog.message()).toContain("Delete this poll");
   await dialog.dismiss();
   await clickDelete;
   await expect(A.page).toHaveURL(new RegExp(`/poll/${slug}$`));
   await A.page.reload();
-  await headerAction(A.page, "button", "Open voting");
+  await pageAction(A.page, "button", "Open voting");
 
   A.page.once("dialog", (dialog) => void dialog.accept());
-  await (await headerAction(A.page, "button", "Delete")).click();
+  await (await pageAction(A.page, "button", "Delete")).click();
   await expect(A.page).toHaveURL(/\/$/);
   expect((await A.page.request.get(`/poll/${slug}`)).status()).toBe(404);
   await expect(A.page.getByRole("link", { name: title })).toHaveCount(0);
@@ -327,7 +327,7 @@ test("time poll: pick slots, vote availability, close, download the .ics", async
     const form = voteForm(p.page);
     await form.getByLabel("Your display name").fill(name);
     for (const [index, state] of states.entries()) {
-      await form.locator(".row").nth(index).getByRole("radio", { name: state, exact: true }).check();
+      await form.locator(".slot").nth(index).getByRole("radio", { name: state, exact: true }).check();
     }
     await submitVote(p.page);
     await expect(voteForm(p.page).getByRole("button", { name: "Update vote" })).toBeVisible();

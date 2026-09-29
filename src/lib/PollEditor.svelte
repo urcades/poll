@@ -212,58 +212,67 @@
 </script>
 
 <form method="post" {action} use:enhance={submit.enhance}>
-  <label>
-    Type
-    <select name="type" id="type" bind:value={selectedType} onchange={syncType}>
-      {#each templateGroups as group (group.label)}
-        <optgroup label={group.label}>
-          {#each templates.filter((template) => template.category === group.category) as template (template.type)}
-            <option value={template.type}>{template.label}</option>
-          {/each}
-        </optgroup>
-      {/each}
-    </select>
-  </label>
+  <section>
+    <h2>Poll type</h2>
+    <label>
+      Voting method
+      <select name="type" id="type" bind:value={selectedType} onchange={syncType}>
+        {#each templateGroups as group (group.label)}
+          <optgroup label={group.label}>
+            {#each templates.filter((template) => template.category === group.category) as template (template.type)}
+              <option value={template.type}>{template.label}</option>
+            {/each}
+          </optgroup>
+        {/each}
+      </select>
+    </label>
 
-  <section id="type-help" class="type-help" aria-live="polite">
-    <p id="type-description">{activeTemplate.description}</p>
-    <p><strong>Example:</strong> <span id="type-example">{activeTemplate.example}</span></p>
-    <p><strong>Results:</strong> <span id="type-result-shape">{activeTemplate.resultShape}</span></p>
-    <p>
-      <strong>Learn more:</strong>
-      <span id="type-links">
-        {#if selectedType === "sense_check"}
-          <a href="https://help.loomio.com/en/user_manual/polls/proposals/index.html" target="_blank" rel="noreferrer">Loomio proposal docs</a>, <a href="https://en.wikipedia.org/wiki/Consensus_decision-making" target="_blank" rel="noreferrer">Consensus decision-making</a>
-        {:else if selectedType === "consent"}
-          <a href="https://help.loomio.com/en/user_manual/polls/proposals/index.html" target="_blank" rel="noreferrer">Loomio proposal docs</a>, <a href="https://en.wikipedia.org/wiki/Sociocracy" target="_blank" rel="noreferrer">Sociocracy</a>
-        {:else if selectedType === "consensus"}
-          <a href="https://help.loomio.com/en/user_manual/polls/proposals/index.html" target="_blank" rel="noreferrer">Loomio proposal docs</a>, <a href="https://en.wikipedia.org/wiki/Consensus_decision-making" target="_blank" rel="noreferrer">Consensus decision-making</a>
-        {:else if selectedType === "majority"}
-          <a href="https://help.loomio.com/en/user_manual/polls/proposals/index.html" target="_blank" rel="noreferrer">Loomio proposal docs</a>, <a href="https://en.wikipedia.org/wiki/Majority_rule" target="_blank" rel="noreferrer">Majority rule</a>
-        {:else if selectedType === "choose"}
-          <a href="https://help.loomio.com/en/user_manual/polls/proposal_types/" target="_blank" rel="noreferrer">Loomio poll docs</a>, <a href="https://en.wikipedia.org/wiki/Approval_voting" target="_blank" rel="noreferrer">Approval voting</a>
-        {:else if selectedType === "approval"}
-          <a href="https://opavote.com/methods/overview" target="_blank" rel="noreferrer">OpaVote methods overview</a>, <a href="https://en.wikipedia.org/wiki/Approval_voting" target="_blank" rel="noreferrer">Approval voting</a>
-        {:else if selectedType === "score"}
-          <a href="https://help.loomio.com/en/user_manual/polls/proposal_types/" target="_blank" rel="noreferrer">Loomio poll docs</a>, <a href="https://en.wikipedia.org/wiki/Score_voting" target="_blank" rel="noreferrer">Score voting</a>
-        {:else if selectedType === "allocate"}
-          <a href="https://help.loomio.com/en/user_manual/polls/proposal_types/" target="_blank" rel="noreferrer">Loomio poll docs</a>, <a href="https://en.wikipedia.org/wiki/Dot-voting" target="_blank" rel="noreferrer">Dot voting</a>
-        {:else if selectedType === "rank"}
-          <a href="https://help.loomio.com/en/user_manual/polls/proposal_types/" target="_blank" rel="noreferrer">Loomio poll docs</a>, <a href="https://en.wikipedia.org/wiki/Borda_count" target="_blank" rel="noreferrer">Borda count</a>
-        {:else if selectedType === "irv"}
-          <a href="https://opavote.com/methods/instant-runoff-voting" target="_blank" rel="noreferrer">OpaVote ranked-choice methods</a>, <a href="https://en.wikipedia.org/wiki/Instant-runoff_voting" target="_blank" rel="noreferrer">Instant-runoff voting</a>
-        {:else if selectedType === "stv"}
-          <a href="https://help.loomio.com/en/user_manual/polls/stv/index.html" target="_blank" rel="noreferrer">Loomio STV docs</a>, <a href="https://en.wikipedia.org/wiki/Single_transferable_vote" target="_blank" rel="noreferrer">Single transferable vote</a>
-        {:else if selectedType === "time_poll"}
-          <a href="https://help.loomio.com/en/user_manual/polls/meeting_polls/index.html" target="_blank" rel="noreferrer">Loomio meeting poll docs</a>, <a href="https://help.loomio.com/en/user_manual/polls/proposal_types/" target="_blank" rel="noreferrer">Loomio poll docs</a>
-        {/if}
-      </span>
-    </p>
+    <div id="type-help" class="callout" aria-live="polite">
+      <p id="type-description">{activeTemplate.description}</p>
+      <p><strong>Example:</strong> <span id="type-example">{activeTemplate.example}</span></p>
+      <p><strong>Results:</strong> <span id="type-result-shape">{activeTemplate.resultShape}</span></p>
+      <p>
+        <strong>Learn more:</strong>
+        <span id="type-links">
+          {#if selectedType === "sense_check"}
+            <a href="https://help.loomio.com/en/user_manual/polls/proposals/index.html" target="_blank" rel="noreferrer">Loomio proposal docs</a>, <a href="https://en.wikipedia.org/wiki/Consensus_decision-making" target="_blank" rel="noreferrer">Consensus decision-making</a>
+          {:else if selectedType === "consent"}
+            <a href="https://help.loomio.com/en/user_manual/polls/proposals/index.html" target="_blank" rel="noreferrer">Loomio proposal docs</a>, <a href="https://en.wikipedia.org/wiki/Sociocracy" target="_blank" rel="noreferrer">Sociocracy</a>
+          {:else if selectedType === "consensus"}
+            <a href="https://help.loomio.com/en/user_manual/polls/proposals/index.html" target="_blank" rel="noreferrer">Loomio proposal docs</a>, <a href="https://en.wikipedia.org/wiki/Consensus_decision-making" target="_blank" rel="noreferrer">Consensus decision-making</a>
+          {:else if selectedType === "majority"}
+            <a href="https://help.loomio.com/en/user_manual/polls/proposals/index.html" target="_blank" rel="noreferrer">Loomio proposal docs</a>, <a href="https://en.wikipedia.org/wiki/Majority_rule" target="_blank" rel="noreferrer">Majority rule</a>
+          {:else if selectedType === "choose"}
+            <a href="https://help.loomio.com/en/user_manual/polls/proposal_types/" target="_blank" rel="noreferrer">Loomio poll docs</a>, <a href="https://en.wikipedia.org/wiki/Approval_voting" target="_blank" rel="noreferrer">Approval voting</a>
+          {:else if selectedType === "approval"}
+            <a href="https://opavote.com/methods/overview" target="_blank" rel="noreferrer">OpaVote methods overview</a>, <a href="https://en.wikipedia.org/wiki/Approval_voting" target="_blank" rel="noreferrer">Approval voting</a>
+          {:else if selectedType === "score"}
+            <a href="https://help.loomio.com/en/user_manual/polls/proposal_types/" target="_blank" rel="noreferrer">Loomio poll docs</a>, <a href="https://en.wikipedia.org/wiki/Score_voting" target="_blank" rel="noreferrer">Score voting</a>
+          {:else if selectedType === "allocate"}
+            <a href="https://help.loomio.com/en/user_manual/polls/proposal_types/" target="_blank" rel="noreferrer">Loomio poll docs</a>, <a href="https://en.wikipedia.org/wiki/Dot-voting" target="_blank" rel="noreferrer">Dot voting</a>
+          {:else if selectedType === "rank"}
+            <a href="https://help.loomio.com/en/user_manual/polls/proposal_types/" target="_blank" rel="noreferrer">Loomio poll docs</a>, <a href="https://en.wikipedia.org/wiki/Borda_count" target="_blank" rel="noreferrer">Borda count</a>
+          {:else if selectedType === "irv"}
+            <a href="https://opavote.com/methods/instant-runoff-voting" target="_blank" rel="noreferrer">OpaVote ranked-choice methods</a>, <a href="https://en.wikipedia.org/wiki/Instant-runoff_voting" target="_blank" rel="noreferrer">Instant-runoff voting</a>
+          {:else if selectedType === "stv"}
+            <a href="https://help.loomio.com/en/user_manual/polls/stv/index.html" target="_blank" rel="noreferrer">Loomio STV docs</a>, <a href="https://en.wikipedia.org/wiki/Single_transferable_vote" target="_blank" rel="noreferrer">Single transferable vote</a>
+          {:else if selectedType === "time_poll"}
+            <a href="https://help.loomio.com/en/user_manual/polls/meeting_polls/index.html" target="_blank" rel="noreferrer">Loomio meeting poll docs</a>, <a href="https://help.loomio.com/en/user_manual/polls/proposal_types/" target="_blank" rel="noreferrer">Loomio poll docs</a>
+          {/if}
+        </span>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Question</h2>
+    <label>Title <input name="title" required value={values.title} /></label>
+    <label>Details <textarea name="details" rows="4">{values.details}</textarea></label>
   </section>
 
   {#if selectedType === "choose" || selectedType === "score" || selectedType === "allocate" || selectedType === "rank" || selectedType === "stv" || selectedType === "time_poll"}
-    <fieldset id="type-settings">
-      <legend>Type settings</legend>
+    <section id="type-settings">
+      <h2>Voting rules</h2>
       {#if selectedType === "choose"}
         <label>Minimum choices <input type="number" name="minChoices" min="0" max={Math.max(0, optionCount)} bind:value={minChoices} /></label>
         <label>Maximum choices <input type="number" name="maxChoices" min="1" max={Math.max(1, optionCount)} bind:value={maxChoices} /></label>
@@ -291,16 +300,13 @@
           </select>
         </label>
       {:else if selectedType === "time_poll"}
-        <label>Meeting duration minutes <input type="number" name="meetingDurationMinutes" min="1" bind:value={meetingDurationMinutes} /></label>
+        <label>Meeting duration (minutes) <input type="number" name="meetingDurationMinutes" min="1" bind:value={meetingDurationMinutes} /></label>
       {/if}
-    </fieldset>
+    </section>
   {/if}
 
-  <label>Title <input name="title" required value={values.title} /></label>
-  <label>Details <textarea name="details" rows="4">{values.details}</textarea></label>
-
   <section class="option-editor" data-option-editor>
-    <div class="option-editor-head">
+    <div class="section-head">
       <h2 id="options-heading">{optionLabels[selectedType]}</h2>
       {#if !fixed}
         <Button type="button" id="add-option" onclick={addOption}>Add option</Button>
@@ -310,6 +316,7 @@
       {#each optionItems as option, index (option.uid)}
         <article
           class={`option-block option-block-${selectedType}`}
+          class:option-block-fixed={fixed}
           draggable={!fixed}
           data-index={index}
           ondragstart={(event) => {
@@ -330,7 +337,9 @@
             draggedIndex = null;
           }}
         >
-          <Button type="button" disabled={fixed}>grab</Button>
+          {#if !fixed}
+            <span class="drag-handle" title="Drag to reorder" aria-hidden="true">⠿</span>
+          {/if}
           <div class="option-fields">
             {#if selectedType === "time_poll"}
               <label>
@@ -351,39 +360,44 @@
               <input value={option.meaning} placeholder={fixed ? "" : "Optional"} readonly={fixed} oninput={(event) => updateOption(index, { meaning: event.currentTarget.value })} />
             </label>
           </div>
-          <div class="option-actions">
-            <Button type="button" disabled={fixed || index === 0} onclick={() => moveOption(index, index - 1)}>Up</Button>
-            <Button type="button" disabled={fixed || index === optionItems.length - 1} onclick={() => moveOption(index, index + 1)}>Down</Button>
-            <Button type="button" disabled={fixed || optionItems.length <= 1} onclick={() => removeOption(index)}>Remove</Button>
-          </div>
+          {#if !fixed}
+            <div class="option-actions">
+              <Button type="button" disabled={index === 0} onclick={() => moveOption(index, index - 1)}>Up</Button>
+              <Button type="button" disabled={index === optionItems.length - 1} onclick={() => moveOption(index, index + 1)}>Down</Button>
+              <Button type="button" disabled={optionItems.length <= 1} onclick={() => removeOption(index)}>Remove</Button>
+            </div>
+          {/if}
         </article>
       {/each}
     </div>
     <textarea name="optionsText" id="optionsText" class="raw-options" aria-hidden="true" tabindex="-1" value={serializedOptions}></textarea>
+    <p class="hint" id="options-hint">{optionsHint}</p>
   </section>
-  <p class="hint" id="options-hint">{optionsHint}</p>
 
-  <fieldset>
-    <legend>Who can vote</legend>
-    <fieldset class="radio-group">
-      <legend>Voter mode</legend>
+  <section>
+    <h2>Who can vote</h2>
+    <fieldset>
+      <legend class="sr-only">Who can vote</legend>
       <div class="radio-options">
         <label><input type="radio" name="voterMode" value="open" bind:group={voterMode} /> Open link</label>
         <label><input type="radio" name="voterMode" value="invite" bind:group={voterMode} /> Invite only</label>
       </div>
+      <p class="field-help">Open link: anyone with the poll link can vote under any name. Invite only: each invitee gets a personal link and can vote once as the name you list; other visitors cannot vote.</p>
     </fieldset>
-    <p class="field-help">Open link: anyone with the poll link can vote under any name. Invite only: each invitee gets a personal link and can vote once as the name you list; other visitors cannot vote.</p>
     {#if voterMode === "invite"}
-      <label>
-        Invited voters
-        <textarea name="inviteesText" id="inviteesText" rows="6" bind:value={inviteesText}></textarea>
-      </label>
-      <p class="field-help" id="invitees-hint">One name per line ({inviteeCount} invited so far; max 500). Duplicates are ignored, ignoring case. Personal links appear on the poll page once you save. You can add invitees after voting opens but not remove anyone.</p>
+      <div class="field">
+        <label>
+          Invited voters
+          <textarea name="inviteesText" id="inviteesText" rows="6" bind:value={inviteesText}></textarea>
+        </label>
+        <p class="field-help" id="invitees-hint">One name per line ({inviteeCount} invited so far; max 500). Duplicates are ignored, ignoring case. Personal links appear on the poll page once you save. You can add invitees after voting opens but not remove anyone.</p>
+      </div>
     {/if}
-  </fieldset>
+  </section>
 
-  <fieldset>
-    <legend>Timing</legend>
+  <section>
+    <h2>Timing</h2>
+    <div class="field-grid">
     <div class="inline-field">
       <label for="opensAt">Opens at</label>
       <input id="opensAt" type="datetime-local" name="opensAt" bind:value={opensAt} />
@@ -392,52 +406,60 @@
     <div class="inline-field">
       <label for="closesAt">Closes at</label>
       <input id="closesAt" type="datetime-local" name="closesAt" bind:value={closesAt} />
-      <Button type="button" onclick={setEndOfDay}>End of Day</Button>
+      <Button type="button" onclick={setEndOfDay}>End of day</Button>
     </div>
-  </fieldset>
+    </div>
+  </section>
 
-  <details class="advanced-settings">
+  <details class="form-details">
     <summary>Advanced settings</summary>
-    <fieldset>
-      <legend>Advanced settings, modeled only</legend>
+    <div class="stack">
+      <div class="field">
       <label><input type="checkbox" name="anonymous" checked={values.config.anonymous} /> Anonymous voting</label>
       <p class="field-help">Hide voter names and reasons in results and exports. Display names are still stored internally so later votes can replace earlier ones.{#if voterMode === "invite"} In invite-only polls the admin's invitation list still shows which invitees have voted (not what they voted), like a sign-in sheet.{/if}</p>
+      </div>
 
-      <fieldset class="radio-group">
+      <fieldset>
         <legend>Hide results</legend>
         <div class="radio-options">
           <label><input type="radio" name="hideResults" value="off" checked={values.config.hideResults === "off"} /> Off</label>
           <label><input type="radio" name="hideResults" value="after_vote" checked={values.config.hideResults === "after_vote"} /> Until vote is cast</label>
           <label><input type="radio" name="hideResults" value="after_close" checked={values.config.hideResults === "after_close"} /> Until poll is closed</label>
         </div>
+        <p class="field-help">Controls when voters can see the current tally: immediately, only after they vote, or only after the poll closes.</p>
       </fieldset>
-      <p class="field-help">Controls when voters can see the current tally: immediately, only after they vote, or only after the poll closes.</p>
 
-      <fieldset class="radio-group">
+      <fieldset>
         <legend>Vote reason</legend>
         <div class="radio-options">
           <label><input type="radio" name="reasonMode" value="optional" checked={values.config.reasonMode === "optional"} /> Optional</label>
           <label><input type="radio" name="reasonMode" value="required" checked={values.config.reasonMode === "required"} /> Required</label>
           <label><input type="radio" name="reasonMode" value="disabled" checked={values.config.reasonMode === "disabled"} /> Disabled</label>
         </div>
+        <p class="field-help">Reasons are written explanations attached to a vote. Required forces voters to write one; disabled removes the reason box.</p>
       </fieldset>
-      <p class="field-help">Reasons are written explanations attached to a vote. Required forces voters to write one; disabled removes the reason box.</p>
 
-      <label>Quorum percent <input type="number" name="quorumPercent" min="0" max="100" value={values.config.quorumPercent} /></label>
-      <p class="field-help">Quorum is the minimum participation threshold for treating a result as valid. For example, 50% means at least half of eligible voters must cast a vote.</p>
+      <div class="field">
+        <label>Quorum percent <input type="number" name="quorumPercent" min="0" max="100" value={values.config.quorumPercent} /></label>
+        <p class="field-help">Quorum is the minimum participation threshold for treating a result as valid. For example, 50% means at least half of eligible voters must cast a vote.</p>
+      </div>
 
       {#if voterMode === "invite"}
         <p class="field-help">Eligible voters: the number of invitees ({inviteeCount}) is used with quorum percent to calculate how many votes are needed.</p>
       {:else}
-        <label>Eligible voter count <input type="number" name="eligibleVoterCount" min="0" value={values.config.eligibleVoterCount} /></label>
-        <p class="field-help">The number of people allowed or expected to vote. This app uses it with quorum percent to calculate how many votes are needed.</p>
+        <div class="field">
+          <label>Eligible voter count <input type="number" name="eligibleVoterCount" min="0" value={values.config.eligibleVoterCount} /></label>
+          <p class="field-help">The number of people allowed or expected to vote. This app uses it with quorum percent to calculate how many votes are needed.</p>
+        </div>
       {/if}
 
       {#if !fixed}
-        <label><input type="checkbox" name="shuffleOptions" checked={values.config.shuffleOptions} /> Shuffle option order for each voter</label>
-        <p class="field-help">Each voter sees the ballot options in their own random order, which stays the same when they reload. Results and exports keep the order you entered.</p>
+        <div class="field">
+          <label><input type="checkbox" name="shuffleOptions" checked={values.config.shuffleOptions} /> Shuffle option order for each voter</label>
+          <p class="field-help">Each voter sees the ballot options in their own random order, which stays the same when they reload. Results and exports keep the order you entered.</p>
+        </div>
       {/if}
-    </fieldset>
+    </div>
   </details>
 
   <Button type="submit" variant="primary" disabled={submit.pending}>{submit.pending ? "Saving..." : submitLabel}</Button>

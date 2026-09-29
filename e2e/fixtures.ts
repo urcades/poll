@@ -69,7 +69,7 @@ export function slugOf(page: Page): string {
 /** Drives /new like a person would and returns once the draft page has loaded. */
 export async function createDraft(page: Page, poll: NewPoll): Promise<string> {
   await page.goto("/");
-  await (await headerAction(page, "link", "New vote/proposal")).click();
+  await (await pageAction(page, "link", "New vote/proposal")).click();
   await expect(page).toHaveURL(/\/new$/);
   await page.locator("#type").waitFor();
   // Wait for hydration so the editor's own handlers exist before we type.
@@ -107,29 +107,22 @@ async function setOptions(page: Page, labels: string[]) {
   }
 }
 
-/**
- * The page header keeps its actions in an "Actions" popover (the header is
- * only 576px wide at any viewport). Opens it if needed and returns the action.
- */
-export async function headerAction(page: Page, role: "button" | "link", name: string | RegExp): Promise<Locator> {
+/** Admin actions live in the poll page's "Manage poll" section; the home page's "New vote/proposal" sits in the header. */
+export async function pageAction(page: Page, role: "button" | "link", name: string | RegExp): Promise<Locator> {
   const target = page.getByRole(role, { name });
-  if (await target.isVisible()) return target;
-  const trigger = page.getByRole("button", { name: "Actions", exact: true });
-  await trigger.waitFor();
-  if ((await trigger.getAttribute("aria-expanded")) !== "true") await trigger.click();
   await target.waitFor();
   return target;
 }
 
 export async function openVoting(page: Page) {
-  await (await headerAction(page, "button", "Open voting")).click();
+  await (await pageAction(page, "button", "Open voting")).click();
   await expect(page.getByRole("heading", { name: "Vote", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Draft preview" })).toHaveCount(0);
-  await headerAction(page, "button", "Close poll");
+  await pageAction(page, "button", "Close poll");
 }
 
 export async function closePoll(page: Page) {
-  await (await headerAction(page, "button", "Close poll")).click();
+  await (await pageAction(page, "button", "Close poll")).click();
   await expect(page.getByText("Voting is not open.")).toBeVisible();
 }
 
