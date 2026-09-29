@@ -1,5 +1,7 @@
 <script lang="ts">
   import { Button, CaretLeft, PageHeader } from "@flowercomputer/flowerparts";
+  import type { Snippet } from "svelte";
+  import OverflowMenu from "./OverflowMenu.svelte";
   import PrimaryAction, { type Primary } from "./PrimaryAction.svelte";
 
   type Props = {
@@ -8,9 +10,11 @@
     backLabel?: string;
     /** The page's one primary action, shown in the header's right corner. */
     primary?: Primary | null;
+    /** Secondary actions: inline on wide screens, in a "More" menu otherwise. */
+    actions?: Snippet;
   };
 
-  let { title, backHref, backLabel = "Back", primary }: Props = $props();
+  let { title, backHref, backLabel = "Back", primary, actions }: Props = $props();
 </script>
 
 <PageHeader ariaLabel={`${title} page header`} sticky>
@@ -22,6 +26,10 @@
   {/snippet}
 
   {#snippet right()}
+    {#if actions}
+      <div class="header-actions">{@render actions()}</div>
+      <div class="header-actions-menu"><OverflowMenu>{@render actions()}</OverflowMenu></div>
+    {/if}
     {#if primary}
       <PrimaryAction {...primary} />
     {/if}
@@ -71,6 +79,32 @@
   :global(body .page-header .page-header-cluster-right) {
     grid-area: end;
     justify-self: end;
+  }
+
+  .header-actions {
+    display: none;
+    gap: var(--space-2, 8px);
+    align-items: center;
+  }
+
+  .header-actions :global(form) {
+    display: contents;
+  }
+
+  /* Wide screens have room for secondary actions beside a centered title;
+     reserve enough on each side for them before the title truncates. */
+  @media (min-width: 70rem) {
+    :global(body .page-header.page-header:has(.header-actions)) {
+      --header-side: 30rem;
+    }
+
+    .header-actions {
+      display: flex;
+    }
+
+    .header-actions-menu {
+      display: none;
+    }
   }
 
   /* Phones: controls on the first row, the full title centered below. */

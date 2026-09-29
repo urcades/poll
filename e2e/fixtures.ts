@@ -107,9 +107,16 @@ async function setOptions(page: Page, labels: string[]) {
   }
 }
 
-/** Admin actions live in the poll page's "Manage poll" section; the home page's "New vote/proposal" sits in the header. */
+/**
+ * Page actions live in the header: the primary button, plus secondary actions
+ * shown inline on wide screens or inside the "More" menu on narrow ones.
+ */
 export async function pageAction(page: Page, role: "button" | "link", name: string | RegExp): Promise<Locator> {
   const target = page.getByRole(role, { name });
+  if (!(await target.isVisible())) {
+    const more = page.locator(".page-header summary", { hasText: "More" });
+    if (await more.isVisible()) await more.click();
+  }
   await target.waitFor();
   return target;
 }

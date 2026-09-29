@@ -26,17 +26,26 @@ body {
   --app-time-color: light-dark(#3b7f58, #8fd6ad);
 }
 
+/* Author display rules (form, section, …) would otherwise override [hidden]. */
+[hidden] {
+  display: none !important;
+}
+
 /* ---------- Page layout ---------- */
 
-/* One readable centered column; the header spans the same width. */
+/* The header can grow wide enough to hold a page's actions; the content
+   below stays in one readable column centered under the title. */
 body > div {
-  max-width: var(--app-content-max-width, 40rem);
+  --content-width: 40rem;
+  max-width: 80rem;
   margin-inline: auto;
   padding-bottom: var(--space-6);
 }
 
 body > div > :not(.page-header) {
   width: 100%;
+  max-width: var(--content-width);
+  margin-inline: auto;
   padding-inline: var(--gutter);
 }
 
@@ -295,9 +304,11 @@ details[open] > summary {
   border-radius: var(--radius-control, 9px);
 }
 
+/* The alert box sits inside the gutter like the text around it. */
 body > div > p[role="alert"] {
   width: calc(100% - 2 * var(--gutter));
-  margin-inline: var(--gutter);
+  max-width: calc(var(--content-width) - 2 * var(--gutter));
+  padding-inline: var(--space-3);
 }
 
 .actions {

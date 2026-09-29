@@ -128,7 +128,13 @@
 
 <MetaTags {meta} noindex />
 
-<AppPageHeader title={data.poll.title} backHref={resolve("/")} backLabel="Back to home" {primary} />
+<AppPageHeader title={data.poll.title} backHref={resolve("/")} backLabel="Back to home" {primary} actions={data.isAdmin ? PollActions : undefined} />
+
+{#if data.isAdmin}
+  <!-- Targets of the header's primary button (form="…"); they hold no fields. -->
+  <form id="open-poll" method="post" action="?/open" use:enhance={adminForm.enhance} hidden></form>
+  <form id="close-poll" method="post" action="?/close" use:enhance={adminForm.enhance} hidden></form>
+{/if}
 
 {#if form?.error}
   <p role="alert">{form.error}</p>
@@ -136,10 +142,9 @@
 
 <p class="lede">{template?.label ?? data.poll.type} · {statusLabel(data.poll)} · {data.voteCount} vote{data.voteCount === 1 ? "" : "s"}</p>
 
-{#if data.isAdmin}
+{#if data.isAdmin && (data.adminLink || isClosed(data.poll))}
   <section>
     <h2>Manage poll</h2>
-    {@render PollActions({ poll: data.poll })}
     {#if isClosed(data.poll)}
       <p>
         Export results:
@@ -244,24 +249,20 @@
   </section>
 {/if}
 
-{#snippet PollActions({ poll }: { poll: Poll })}
-  <div class="actions">
-    {#if poll.status === "draft"}
-      <Button href={resolve("/poll/[id]/edit", { id: poll.slug })} variant="secondary">Edit draft</Button>
-      <form id="open-poll" method="post" action="?/open" use:enhance={adminForm.enhance}></form>
-      {#if poll.opensAt}
-        <form method="post" action="?/schedule" use:enhance={adminForm.enhance}><Button type="submit" variant="secondary" disabled={adminForm.pending}>Schedule</Button></form>
-      {/if}
-    {:else if poll.status === "scheduled"}
-      <form method="post" action="?/unschedule" use:enhance={adminForm.enhance}><Button type="submit" variant="secondary" disabled={adminForm.pending}>Unschedule</Button></form>
-    {:else if !isClosed(poll)}
-      <form id="close-poll" method="post" action="?/close" use:enhance={adminForm.enhance}>
-        {#if primary?.form !== "close-poll"}<Button type="submit" variant="secondary" disabled={adminForm.pending}>Close poll</Button>{/if}
-      </form>
+{#snippet PollActions()}
+  {@const poll = data.poll}
+  {#if poll.status === "draft"}
+    <Button href={resolve("/poll/[id]/edit", { id: poll.slug })} variant="secondary">Edit draft</Button>
+    {#if poll.opensAt}
+      <form method="post" action="?/schedule" use:enhance={adminForm.enhance}><Button type="submit" variant="secondary" disabled={adminForm.pending}>Schedule</Button></form>
     {/if}
-    <form method="post" action="?/duplicate" use:enhance={adminForm.enhance}><Button type="submit" variant="secondary" disabled={adminForm.pending}>Duplicate</Button></form>
-    <form method="post" action="?/delete" use:enhance={confirmedDelete}><Button type="submit" variant="secondary" disabled={adminForm.pending}>Delete</Button></form>
-  </div>
+  {:else if poll.status === "scheduled"}
+    <form method="post" action="?/unschedule" use:enhance={adminForm.enhance}><Button type="submit" variant="secondary" disabled={adminForm.pending}>Unschedule</Button></form>
+  {:else if !isClosed(poll) && primary?.form !== "close-poll"}
+    <form method="post" action="?/close" use:enhance={adminForm.enhance}><Button type="submit" variant="secondary" disabled={adminForm.pending}>Close poll</Button></form>
+  {/if}
+  <form method="post" action="?/duplicate" use:enhance={adminForm.enhance}><Button type="submit" variant="secondary" disabled={adminForm.pending}>Duplicate</Button></form>
+  <form method="post" action="?/delete" use:enhance={confirmedDelete}><Button type="submit" variant="secondary" disabled={adminForm.pending}>Delete</Button></form>
 {/snippet}
 
 {#snippet VoteForm({ poll, options, viewerName, viewerVote, inviteBallot, id }: { poll: Poll; options: Option[]; viewerName: string; viewerVote: Vote | null; inviteBallot: boolean; id?: string })}
