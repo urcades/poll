@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { Button, CaretLeft, PageHeader } from "@flowercomputer/flowerparts";
   import type { Snippet } from "svelte";
   import OverflowMenu from "./OverflowMenu.svelte";
   import PrimaryAction, { type Primary } from "./PrimaryAction.svelte";
@@ -17,15 +16,14 @@
   let { title, backHref, backLabel = "Back", primary, actions }: Props = $props();
 </script>
 
-<PageHeader ariaLabel={`${title} page header`} sticky>
-  {#snippet left()}
+<header class="page-header" class:has-actions={Boolean(actions)}>
+  <div class="page-header-start">
     {#if backHref}
-      <Button href={backHref} variant="tertiary" icon={CaretLeft} iconOnly aria-label={backLabel} />
+      <a class="page-header-back" href={backHref} aria-label={backLabel}><span aria-hidden="true">←</span> Back</a>
     {/if}
-    <h1 class="page-header-title">{title}</h1>
-  {/snippet}
-
-  {#snippet right()}
+  </div>
+  <h1 class="page-header-title">{title}</h1>
+  <div class="page-header-end">
     {#if actions}
       <div class="header-actions">{@render actions()}</div>
       <div class="header-actions-menu"><OverflowMenu>{@render actions()}</OverflowMenu></div>
@@ -33,11 +31,30 @@
     {#if primary}
       <PrimaryAction {...primary} />
     {/if}
-  {/snippet}
-</PageHeader>
+  </div>
+</header>
 
 <style>
-  /* Same type treatment as section headings (h2). */
+  /* Three columns with equal sides, so the title sits at the exact center
+     whatever the back link and actions measure. The title column leaves room
+     for side controls up to --header-side wide, then truncates. */
+  .page-header {
+    --header-side: 10rem;
+    position: sticky;
+    top: var(--inset);
+    z-index: 20;
+    display: grid;
+    grid-template-columns: 1fr fit-content(calc(100% - 2 * var(--header-side))) 1fr;
+    grid-template-areas: "start title end";
+    column-gap: var(--space-3);
+    align-items: center;
+  }
+
+  .page-header-start {
+    grid-area: start;
+    justify-self: start;
+  }
+
   .page-header-title {
     grid-area: title;
     min-inline-size: 0;
@@ -46,44 +63,29 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     text-align: center;
-    color: var(--color-ink);
-    font-size: 15px;
-    font-weight: 600;
-    line-height: 1.3;
   }
 
-  /* Three columns with equal sides, so the title sits at the exact center
-     whatever the back button and primary action measure. The title column
-     leaves room for side controls up to --header-side wide, then truncates. */
-  :global(body .page-header.page-header) {
-    --header-side: 10rem;
-    grid-template-columns: 1fr fit-content(calc(100% - 2 * var(--header-side))) 1fr;
-    grid-template-areas: "start title end";
-    column-gap: var(--space-3, 12px);
-    padding-inline: var(--gutter, 16px);
-  }
-
-  :global(body .page-header .page-header-cluster-left) {
-    display: contents;
-  }
-
-  :global(body .page-header .page-header-cluster-left > .button) {
-    grid-area: start;
-    justify-self: start;
-  }
-
-  :global(body .page-header .page-header-spacer) {
-    display: none;
-  }
-
-  :global(body .page-header .page-header-cluster-right) {
+  .page-header-end {
     grid-area: end;
     justify-self: end;
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
+  }
+
+  /* Bogathon nav links: no underline until hover. */
+  .page-header-back {
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .page-header-back:hover {
+    text-decoration: underline;
   }
 
   .header-actions {
     display: none;
-    gap: var(--space-2, 8px);
+    gap: var(--space-2);
     align-items: center;
   }
 
@@ -94,7 +96,7 @@
   /* Wide screens have room for secondary actions beside a centered title;
      reserve enough on each side for them before the title truncates. */
   @media (min-width: 70rem) {
-    :global(body .page-header.page-header:has(.header-actions)) {
+    .page-header.has-actions {
       --header-side: 30rem;
     }
 
@@ -109,10 +111,10 @@
 
   /* Phones: controls on the first row, the full title centered below. */
   @media (max-width: 480px) {
-    :global(body .page-header.page-header) {
+    .page-header {
       grid-template-columns: 1fr auto;
       grid-template-areas: "start end" "title title";
-      row-gap: var(--space-1, 4px);
+      row-gap: var(--space-2);
     }
 
     .page-header-title {

@@ -36,7 +36,7 @@
 </script>
 
 <details class="overflow-menu" bind:this={menu}>
-  <summary>{label}<span aria-hidden="true">▾</span></summary>
+  <summary class="button button-secondary">{label}<span aria-hidden="true">▾</span></summary>
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
   <div class="overflow-menu-panel" onclick={chosen}>
     {@render children()}
@@ -48,61 +48,52 @@
     position: relative;
   }
 
-  /* Looks like the library's secondary button. */
   summary {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: var(--button-padding, var(--control-padding, 7px 11px));
-    border-radius: var(--button-radius, var(--control-radius, var(--radius-control, 9px)));
-    color: var(--button-secondary-color, var(--color-accent));
-    background: var(--button-secondary-background, var(--color-control-subtle));
-    font-weight: 400;
-    white-space: nowrap;
     list-style: none;
-    cursor: pointer;
   }
 
   summary::-webkit-details-marker {
     display: none;
   }
 
-  summary:focus-visible {
-    outline: 2px solid var(--control-focus-color, var(--color-accent));
-    outline-offset: var(--control-focus-offset, 3px);
-  }
-
   summary span {
-    font-size: 11px;
+    margin-inline-start: 0.35em;
+    font-size: 0.7em;
   }
 
   .overflow-menu[open] > summary {
     margin: 0;
   }
 
+  /* A small paper card, rounded like the site's cards. */
   .overflow-menu-panel {
     position: absolute;
-    top: calc(100% + 6px);
+    top: calc(100% + 0.5em);
     right: 0;
-    z-index: var(--flowerparts-overlay-z-index, 50);
+    z-index: 30;
     display: grid;
-    gap: 2px;
-    min-width: 11rem;
-    padding: 6px;
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-control, 9px);
-    box-shadow: 0 8px 24px rgb(0 0 0 / 0.12);
+    gap: 0.15em;
+    min-width: 11em;
+    padding: 0.4em;
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    border-radius: 0.95em;
+    box-shadow: 0 0.6em 1.8em rgb(0 0 0 / 0.12);
   }
 
-  /* Items fill the menu width and read left to right. */
   .overflow-menu-panel :global(form) {
     display: contents;
   }
 
+  /* Items fill the menu and read left to right, tinted only on hover. */
   .overflow-menu-panel :global(.button) {
     width: 100%;
     justify-content: flex-start;
-    --button-secondary-background: transparent;
+    background: transparent;
+  }
+
+  .overflow-menu-panel :global(.button:hover),
+  .overflow-menu-panel :global(.button:focus-visible) {
+    background: var(--tint);
   }
 </style>

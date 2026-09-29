@@ -3,7 +3,7 @@
   import { enhance } from "$app/forms";
   import { invalidateAll } from "$app/navigation";
   import { page } from "$app/state";
-  import { Button } from "@flowercomputer/flowerparts";
+  import Button from "$lib/Button.svelte";
   import AppPageHeader from "$lib/AppPageHeader.svelte";
   import LocalTime from "$lib/LocalTime.svelte";
   import MetaTags from "$lib/MetaTags.svelte";

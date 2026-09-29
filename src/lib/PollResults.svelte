@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { Table, tableColumn, tableColumns } from "@flowercomputer/flowerparts";
   import LocalTime from "$lib/LocalTime.svelte";
   import ResultBars from "$lib/ResultBars.svelte";
   import RoundChart from "$lib/RoundChart.svelte";
@@ -26,25 +25,26 @@
     <p>Quota: {formatNumber(tally.quota)}</p>
   {/if}
   <ResultBars {tally} {poll} />
-  <Table
-    label="Poll results"
-    items={tally.rows}
-    columns={tableColumns(...resultHeaders(tally).map(() => tableColumn.fill(1, "5.5rem")))}
-    getKey={(row) => row.optionId}
-    stickyHeader={false}
-  >
-    {#snippet header()}
-      {#each resultHeaders(tally) as header (header)}
-        <span role="columnheader">{header}</span>
-      {/each}
-    {/snippet}
-
-    {#snippet row(resultRow)}
-      {#each resultCells(tally, resultRow) as cell, index (index)}
-        <span role="cell">{#if tally.type === "time_poll" && index === 1}<LocalTime value={String(cell)} {minutes} />{:else}{cell}{/if}</span>
-      {/each}
-    {/snippet}
-  </Table>
+  <div class="table-wrap">
+    <table aria-label="Poll results">
+      <thead>
+        <tr>
+          {#each resultHeaders(tally) as header (header)}
+            <th scope="col">{header}</th>
+          {/each}
+        </tr>
+      </thead>
+      <tbody>
+        {#each tally.rows as resultRow (resultRow.optionId)}
+          <tr>
+            {#each resultCells(tally, resultRow) as cell, index (index)}
+              <td>{#if tally.type === "time_poll" && index === 1}<LocalTime value={String(cell)} {minutes} />{:else}{cell}{/if}</td>
+            {/each}
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  </div>
   {#if tally.roundLogs?.length}
     {#if tally.type === "irv" || tally.type === "stv"}
       <details open>
@@ -54,28 +54,28 @@
     {/if}
     <details>
       <summary>Round log</summary>
-      <Table
-        label="Round log"
-        items={tally.roundLogs}
-        columns={tableColumns(tableColumn.fit(), tableColumn.fit(), tableColumn.fill(1, "12rem"), tableColumn.fill(1, "12rem"))}
-        getKey={(log, index) => `${index}-${log.round}-${log.action}`}
-        minWidth="42rem"
-        stickyHeader={false}
-      >
-        {#snippet header()}
-          <span role="columnheader">Round</span>
-          <span role="columnheader">Action</span>
-          <span role="columnheader">Tallies</span>
-          <span role="columnheader">Note</span>
-        {/snippet}
-
-        {#snippet row(log)}
-          <span role="cell">{log.round}</span>
-          <span role="cell">{log.action}</span>
-          <span role="cell">{roundTallies(log)}</span>
-          <span role="cell">{log.note ?? ""}</span>
-        {/snippet}
-      </Table>
+      <div class="table-wrap">
+        <table class="round-log" aria-label="Round log">
+          <thead>
+            <tr>
+              <th scope="col">Round</th>
+              <th scope="col">Action</th>
+              <th scope="col">Tallies</th>
+              <th scope="col">Note</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each tally.roundLogs as log, index (`${index}-${log.round}-${log.action}`)}
+              <tr>
+                <td>{log.round}</td>
+                <td>{log.action}</td>
+                <td>{roundTallies(log)}</td>
+                <td>{log.note ?? ""}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
     </details>
   {/if}
   {#if !poll.config.anonymous && poll.config.reasonMode !== "disabled" && tally.voteDetails?.length}

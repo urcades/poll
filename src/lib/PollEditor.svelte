@@ -1,6 +1,6 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
-  import { Button } from "@flowercomputer/flowerparts";
+  import Button from "$lib/Button.svelte";
   import { pendingForm } from "$lib/enhance.svelte";
   import { defaultOptionsText, templates } from "../templates";
   import { isProposalType, type PollConfig, type PollType } from "../types";

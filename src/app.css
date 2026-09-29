@@ -1,29 +1,71 @@
+/* Design language: bogathon.flowercomputer.com. One serif at one weight,
+   ink on paper, hierarchy from space and opacity rather than size or bold,
+   tinted surfaces with a faint noise grain, soft superellipse corners. */
+
+@font-face {
+  font-family: "ABC Arizona Text";
+  src: url("/fonts/arizona.woff2") format("woff2");
+  font-display: swap;
+  font-weight: 100 900;
+  font-style: normal;
+}
+
 /* ---------- Tokens ---------- */
 
+:root {
+  --ink: lab(10% 0 0);
+  --white: lab(100% 0 0);
+  --paper-tone: oklch(94.22% 0.0034 325.6);
+  --bg: var(--paper-tone);
+  --fg: var(--ink);
+  --error: oklch(50% 0.16 30);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: var(--ink);
+    --fg: var(--white);
+    --error: oklch(76% 0.13 30);
+    color-scheme: dark;
+  }
+}
+
 body {
-  font-size: var(--font-size-default, 14px);
-  line-height: var(--line-height-default, 18px);
-  letter-spacing: 0;
-  color: var(--color-ink);
-  background: var(--color-page);
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 24px;
-  --space-6: 40px;
-  --gutter: 16px;
-  --text-small: 13px;
-  --app-surface-muted: color-mix(in srgb, var(--color-surface) 86%, var(--color-page));
-  --app-surface-subtle: color-mix(in srgb, var(--color-ink) 4%, var(--color-surface));
-  --app-control-border: var(--color-disabled-background);
-  --app-control-background: var(--color-surface);
-  --app-control-active-background: var(--color-control-subtle);
-  --app-proposal-color: light-dark(#6f7571, #b7bdb9);
-  --app-choose-color: light-dark(#2878bd, #8ac6ff);
-  --app-score-color: light-dark(#9a6418, #efbf78);
-  --app-rank-color: light-dark(#6b5fb5, #bdb7ff);
-  --app-time-color: light-dark(#3b7f58, #8fd6ad);
+  /* Derived from --bg/--fg, so they flip with the color scheme. */
+  --paper: var(--bg);
+  --tint: color-mix(in lab, var(--fg) 8%, transparent);
+  --muted: color-mix(in lab, var(--fg) 55%, transparent);
+  --rule: color-mix(in srgb, var(--fg) 22%, transparent);
+  --noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.045'/%3E%3C/svg%3E");
+
+  /* Controls are pill-soft; cards take the site's larger rounding. */
+  --radius-control: 0.55em;
+  --radius-card: calc(1em + 10px);
+
+  --inset: 2.22em;
+  --space-1: 0.25em;
+  --space-2: 0.5em;
+  --space-3: 0.75em;
+  --space-4: 1em;
+  --space-5: 1.5em;
+  --space-6: 3em;
+  --content-width: 66ch;
+
+  margin: 0;
+  padding: 0;
+  color: var(--fg);
+  background: var(--bg);
+  font-family: "ABC Arizona Text", serif;
+  font-size: 1.11em;
+  font-weight: 333;
+  line-height: 1.33;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
 /* Author display rules (form, section, …) would otherwise override [hidden]. */
@@ -36,61 +78,115 @@ body {
 /* The header can grow wide enough to hold a page's actions; the content
    below stays in one readable column centered under the title. */
 body > div {
-  --content-width: 40rem;
   max-width: 80rem;
   margin-inline: auto;
-  padding-bottom: var(--space-6);
+  padding: var(--inset);
 }
 
-body > div > :not(.page-header) {
+body > div > :not(.page-header, .header-scrim) {
   width: 100%;
   max-width: var(--content-width);
   margin-inline: auto;
-  padding-inline: var(--gutter);
 }
 
-body > div > .page-header + * {
+.page-header {
+  margin-block-end: calc(var(--inset) - 0.55em);
+}
+
+body > div > :not(.page-header, .header-scrim) + * {
   margin-top: var(--space-4);
 }
 
-body > div > * + * {
-  margin-top: var(--space-4);
-}
-
-body > div > * + section,
-body > div > * + form {
+/* Sections get the site's generous 3em lead-in above their heading. */
+body > div > :not(.page-header, .header-scrim) + :is(section, form) {
   margin-top: var(--space-6);
+}
+
+/* Fades content out under the sticky header once the page scrolls. */
+.header-scrim {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 10;
+  block-size: calc(var(--inset) * 5);
+  background: var(--bg);
+  mask-image: linear-gradient(#000 0%, #000000e6 30%, #0000 100%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.22s;
+}
+
+.header-scrim.visible {
+  opacity: 1;
+}
+
+@media screen and (min-width: 64rem) {
+  .header-scrim {
+    block-size: calc(var(--inset) * 3.5);
+  }
+}
+
+@media screen and (max-width: 640px) {
+  body {
+    --inset: 1.11em;
+  }
+}
+
+@media screen and (min-width: 1600px) {
+  body {
+    font-size: 1.5em;
+    --inset: 3.33em;
+  }
 }
 
 /* ---------- Text ---------- */
 
 p,
-li {
-  line-height: 1.5;
-}
-
+h1,
 h2,
 h3,
 h4 {
-  color: var(--color-ink);
-  font-weight: 600;
-  line-height: 1.3;
+  margin: 0;
 }
 
-h2 {
-  font-size: 15px;
+/* Headings are body-sized and body-weight; space and tone set them apart. */
+h1,
+h2,
+h3,
+h4 {
+  font-size: 1em;
+  font-weight: inherit;
+  line-height: normal;
+  text-wrap: balance;
+}
+
+h2,
+h3 {
+  color: var(--muted);
+}
+
+p,
+li {
+  text-wrap: pretty;
+}
+
+strong,
+b {
+  font-weight: 500;
 }
 
 a {
-  color: var(--color-accent);
-  text-decoration-thickness: 0.08em;
+  color: var(--fg);
   text-underline-offset: 0.14em;
 }
 
 ul,
 ol {
   margin: 0;
-  padding-left: 1.25rem;
+  padding-inline-start: 1.5em;
+}
+
+ul {
+  list-style-type: square;
 }
 
 li + li {
@@ -101,15 +197,18 @@ li + li {
 .meta,
 .hint,
 .field-help {
-  color: var(--color-muted);
+  color: var(--muted);
 }
 
 .meta,
 .hint,
 .field-help {
-  font-size: var(--text-small);
-  line-height: 1.45;
-  font-weight: 400;
+  font-size: 0.9em;
+}
+
+:focus-visible {
+  outline: 1px solid var(--fg);
+  outline-offset: 3px;
 }
 
 /* ---------- Stacks: every container spaces its children with one gap ---------- */
@@ -127,22 +226,24 @@ fieldset,
 
 section,
 .stack {
-  gap: var(--space-3);
+  gap: var(--space-4);
 }
 
 form {
   gap: var(--space-5);
 }
 
-fieldset {
+/* A form made of sections (the poll editor) keeps the page's section rhythm. */
+form:has(> section) {
+  gap: var(--space-6);
+}
+
+fieldset,
+.field {
   gap: var(--space-2);
 }
 
-.field {
-  gap: 6px;
-}
-
-/* Library buttons reset their own margins and would stretch in a grid. */
+/* Buttons keep their own width inside a grid stack. */
 :where(section, form, fieldset, .stack, .field, .callout) > .button {
   justify-self: start;
 }
@@ -155,13 +256,55 @@ fieldset {
   justify-content: space-between;
 }
 
+/* ---------- Buttons ---------- */
+
+/* The site's "Get BogKit" pill: ink fill, paper text. */
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4em;
+  margin: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  padding: 0.35em 0.65em;
+  color: var(--fg);
+  font: inherit;
+  line-height: 1.33;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  appearance: none;
+}
+
+.button:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.button-primary {
+  color: var(--bg);
+  background: var(--fg);
+}
+
+.button-secondary {
+  background-color: var(--tint);
+  background-image: var(--noise);
+}
+
+.button-tertiary {
+  background: transparent;
+}
+
+.button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 /* ---------- Fields ---------- */
 
 label {
   display: grid;
-  gap: 6px;
-  font-weight: 500;
-  color: var(--color-ink);
+  gap: var(--space-2);
 }
 
 fieldset {
@@ -177,29 +320,26 @@ legend {
   width: 100%;
   margin: 0;
   padding: 0;
-  font-weight: 500;
-  color: var(--color-ink);
 }
 
-/* Radio and checkbox rows: control beside text, normal weight. */
+/* Radio and checkbox rows: control beside text. */
 label:has(> input[type="radio"]),
 label:has(> input[type="checkbox"]) {
   display: flex;
   align-items: flex-start;
   gap: var(--space-2);
-  font-weight: 400;
 }
 
 label > input[type="radio"],
 label > input[type="checkbox"] {
   flex: none;
-  margin: 2px 0 0;
+  margin: 0.2em 0 0;
 }
 
 .choice-meaning {
   display: block;
-  color: var(--color-muted);
-  font-size: var(--text-small);
+  color: var(--muted);
+  font-size: 0.9em;
 }
 
 .radio-options {
@@ -210,16 +350,15 @@ label > input[type="checkbox"] {
 
 /* A short numeric input on the same line as its label. */
 label.inline-control {
-  grid-template-columns: minmax(0, 1fr) 7rem;
+  grid-template-columns: minmax(0, 1fr) 7em;
   align-items: center;
   gap: var(--space-3);
-  font-weight: 400;
 }
 
 /* Label | input | button rows that share one set of columns. */
 .field-grid {
   display: grid;
-  grid-template-columns: 7rem minmax(0, 1fr) max-content;
+  grid-template-columns: 7em minmax(0, 1fr) max-content;
   gap: var(--space-2) var(--space-3);
   align-items: center;
 }
@@ -232,23 +371,35 @@ label.inline-control {
   justify-self: start;
 }
 
+/* Inputs are tinted wells with the site's grain, no hard border. */
 input:not([type="checkbox"]):not([type="radio"]),
 select,
 textarea {
   width: 100%;
   max-width: none;
-  min-height: var(--control-block-size, 32px);
   margin: 0;
-  color: var(--color-ink);
-  background: var(--app-control-background);
-  border: 1px solid var(--app-control-border);
-  border-radius: var(--radius-control, 9px);
-  padding: 6px 9px;
-  font-weight: 400;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  padding: 0.45em 0.65em;
+  color: var(--fg);
+  background-color: var(--tint);
+  background-image: var(--noise);
+  font: inherit;
+  line-height: 1.33;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--muted);
+}
+
+input:not([type="checkbox"]):not([type="radio"]):focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline-offset: 2px;
 }
 
 textarea {
-  min-height: auto;
   resize: vertical;
 }
 
@@ -259,56 +410,57 @@ summary {
 
 input[type="checkbox"],
 input[type="radio"] {
-  accent-color: var(--color-accent);
+  accent-color: var(--fg);
 }
 
 input:disabled,
 select:disabled,
-textarea:disabled {
-  color: var(--color-disabled-foreground);
-  background: var(--color-disabled-background);
+textarea:disabled,
+input[readonly] {
+  color: var(--muted);
   cursor: not-allowed;
 }
 
 /* ---------- Disclosure ---------- */
 
-summary {
-  font-weight: 500;
-  color: var(--color-ink);
+details > :not(summary) {
+  margin-inline-start: var(--space-4);
 }
 
 details[open] > summary {
   margin-bottom: var(--space-3);
 }
 
-/* A collapsible form section: its summary looks like a section heading. */
+/* A collapsible form section: its summary reads like a section heading. */
 .form-details > summary {
-  font-size: 15px;
-  font-weight: 600;
+  color: var(--muted);
 }
 
-/* ---------- Blocks ---------- */
+.form-details > :not(summary) {
+  margin-inline-start: 0;
+}
+
+/* ---------- Surfaces ---------- */
+
+/* Tinted, grained cards, like the site's asides. */
+.callout,
+.card,
+.option-block,
+[role="alert"] {
+  border-radius: var(--radius-card);
+  background-color: var(--tint);
+  background-image: var(--noise);
+}
 
 .callout {
   gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-control, 9px);
-  background: var(--app-surface-subtle);
+  padding: var(--space-4);
 }
 
 [role="alert"] {
-  padding: 10px var(--space-3);
-  color: var(--color-error, #b3261e);
-  background: color-mix(in srgb, var(--color-error, #b3261e) 8%, var(--color-surface));
-  border: 1px solid color-mix(in srgb, var(--color-error, #b3261e) 30%, transparent);
-  border-radius: var(--radius-control, 9px);
-}
-
-/* The alert box sits inside the gutter like the text around it. */
-body > div > p[role="alert"] {
-  width: calc(100% - 2 * var(--gutter));
-  max-width: calc(var(--content-width) - 2 * var(--gutter));
-  padding-inline: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  color: var(--error);
+  background-color: color-mix(in lab, var(--error) 12%, transparent);
 }
 
 .actions {
@@ -329,11 +481,10 @@ body > div > p[role="alert"] {
   align-items: center;
 }
 
-/* Poll list on the home page: each card is one link target. */
 .poll-list,
 .plain-list {
   display: grid;
-  gap: var(--space-2);
+  gap: var(--space-3);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -344,29 +495,19 @@ body > div > p[role="alert"] {
   margin-top: 0;
 }
 
+/* Home page poll cards: the whole card is the link target. */
 .card {
   position: relative;
   display: grid;
   gap: var(--space-1);
-  padding: var(--space-3) var(--space-4);
-  color: var(--color-ink);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control, 9px);
-  transition: border-color var(--motion-duration-fast, 120ms);
+  padding: var(--space-4);
 }
 
-.card:hover {
-  border-color: var(--color-accent);
-}
-
-.card:has(a:focus-visible) {
-  outline: 2px solid var(--control-focus-color, var(--color-accent));
-  outline-offset: 2px;
+.card h3 {
+  color: var(--fg);
 }
 
 .card h3 a {
-  color: inherit;
   text-decoration: none;
   outline: none;
 }
@@ -378,8 +519,13 @@ body > div > p[role="alert"] {
   border-radius: inherit;
 }
 
-.card p:not(.meta) {
-  color: var(--color-ink);
+.card:hover h3 a {
+  text-decoration: underline;
+}
+
+.card:has(a:focus-visible) {
+  outline: 1px solid var(--fg);
+  outline-offset: 3px;
 }
 
 /* One row per invitee, separated by hairlines. */
@@ -389,7 +535,7 @@ body > div > p[role="alert"] {
   gap: var(--space-2) var(--space-3);
   align-items: center;
   padding: var(--space-2) 0;
-  border-bottom: 1px solid var(--color-border-subtle, var(--color-border));
+  border-bottom: 1px solid var(--rule);
 }
 
 .list-row .meta {
@@ -399,13 +545,54 @@ body > div > p[role="alert"] {
 /* Time-poll ballot: one block per slot. */
 .slot {
   display: grid;
-  gap: 6px;
+  gap: var(--space-2);
   padding: var(--space-3) 0;
-  border-bottom: 1px solid var(--color-border-subtle, var(--color-border));
+  border-bottom: 1px solid var(--rule);
 }
 
 .slot:first-of-type {
   padding-top: 0;
+}
+
+/* ---------- Tables (the site's schedule table) ---------- */
+
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-card);
+}
+
+table {
+  width: 100%;
+  border-spacing: 0;
+}
+
+th,
+td {
+  padding: var(--space-3) var(--space-4);
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  font-weight: inherit;
+}
+
+thead {
+  background-color: var(--tint);
+  background-image: var(--noise);
+}
+
+tr > :not(:first-child) {
+  border-inline-start: 1px solid var(--rule);
+}
+
+tbody tr > * {
+  border-block-start: 1px solid var(--rule);
+}
+
+table.round-log {
+  min-width: 42em;
 }
 
 /* ---------- Poll editor ---------- */
@@ -420,52 +607,12 @@ body > div > p[role="alert"] {
   grid-template-columns: auto 1fr auto;
   gap: var(--space-3);
   align-items: center;
-  color: var(--color-ink);
-  border: 1px solid var(--color-border);
-  border-left-width: 6px;
-  padding: var(--space-3);
-  border-radius: var(--radius-control, 9px);
-  background: var(--app-surface-muted);
+  padding: var(--space-3) var(--space-4);
 }
 
-.option-block-sense_check,
-.option-block-consent,
-.option-block-consensus,
-.option-block-majority {
-  background: var(--app-surface-subtle);
-}
-
-.option-block-consent,
-.option-block-majority {
-  border-left-color: var(--app-proposal-color);
-}
-
-.option-block-consensus {
-  border-left-color: color-mix(in srgb, var(--app-proposal-color) 72%, var(--color-accent));
-}
-
-.option-block-sense_check {
-  border-left-color: color-mix(in srgb, var(--app-proposal-color) 52%, transparent);
-}
-
-.option-block-choose,
-.option-block-approval {
-  border-left-color: var(--app-choose-color);
-}
-
-.option-block-score,
-.option-block-allocate {
-  border-left-color: var(--app-score-color);
-}
-
-.option-block-rank,
-.option-block-irv,
-.option-block-stv {
-  border-left-color: var(--app-rank-color);
-}
-
-.option-block-time_poll {
-  border-left-color: var(--app-time-color);
+/* Inputs sit on paper inside a tinted card. */
+.option-block input:not([type="checkbox"]):not([type="radio"]) {
+  background-color: var(--paper);
 }
 
 .option-block-fixed {
@@ -473,8 +620,8 @@ body > div > p[role="alert"] {
 }
 
 .drag-handle {
-  color: var(--color-muted);
-  font-size: 18px;
+  color: var(--muted);
+  font-size: 1.2em;
   line-height: 1;
   cursor: grab;
   user-select: none;
@@ -488,9 +635,14 @@ body > div > p[role="alert"] {
 
 .option-actions {
   display: flex;
-  gap: 6px;
+  gap: var(--space-1);
   flex-wrap: wrap;
   justify-content: end;
+}
+
+.option-actions .button {
+  background-color: var(--paper);
+  background-image: none;
 }
 
 .raw-options {
@@ -526,49 +678,49 @@ body > div > p[role="alert"] {
   border: 0;
 }
 
-/* Reorderable rank ballot */
+/* ---------- Reorderable rank ballot ---------- */
+
 .rank-ballot > * + * {
-  margin-top: 10px;
+  margin-top: var(--space-3);
 }
 
 .rank-lists {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(14rem, 100%), 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(min(14em, 100%), 1fr));
+  gap: var(--space-3);
 }
 
 .rank-lists h3 {
-  margin: 0 0 6px;
-  font-size: inherit;
+  margin: 0 0 var(--space-2);
 }
 
 .rank-list {
-  min-height: 3rem;
+  min-height: 3em;
   margin: 0;
-  padding: 6px;
+  padding: var(--space-2);
   list-style: none;
-  border: 1px dashed var(--color-border);
-  border-radius: var(--radius-control, 9px);
-  background: var(--app-surface-subtle);
+  border: 1px dashed var(--rule);
+  border-radius: var(--radius-card);
+  background-color: var(--tint);
+  background-image: var(--noise);
 }
 
 .rank-list.rank-drop {
-  border-color: var(--color-accent);
+  border-color: var(--fg);
 }
 
 .rank-list > * + * {
-  margin-top: 6px;
+  margin-top: var(--space-1);
 }
 
 .rank-item {
   display: flex;
   align-items: stretch;
-  gap: 4px;
+  gap: var(--space-1);
   min-width: 0;
-  color: var(--color-ink);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control, 9px);
+  color: var(--fg);
+  background: var(--paper);
+  border-radius: var(--radius-control);
   cursor: grab;
 }
 
@@ -580,71 +732,67 @@ body > div > p[role="alert"] {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 1.8rem;
-  color: var(--color-muted);
+  min-width: 1.8em;
+  color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
 
 .rank-item button {
-  font: inherit;
   color: inherit;
   background: transparent;
   border: 0;
-  border-radius: var(--radius-control, 9px);
+  border-radius: var(--radius-control);
+  font: inherit;
   cursor: pointer;
 }
 
 .rank-item button:focus-visible {
-  outline: 2px solid var(--color-accent);
+  outline: 1px solid var(--fg);
   outline-offset: -2px;
 }
 
 .rank-main {
   flex: 1;
   min-width: 0;
-  padding: 8px 10px;
+  padding: var(--space-2) var(--space-3);
   text-align: left;
   overflow-wrap: anywhere;
 }
 
 .rank-main:hover,
 .rank-move:hover:not(:disabled) {
-  background: var(--app-control-active-background);
+  background: var(--tint);
 }
 
 .rank-main[aria-disabled="true"] {
-  color: var(--color-muted);
+  color: var(--muted);
   cursor: not-allowed;
 }
 
 .rank-move {
-  min-width: 2.25rem;
+  min-width: 2.25em;
 }
 
 .rank-move:disabled {
-  color: var(--color-disabled-foreground);
+  opacity: 0.35;
   cursor: not-allowed;
 }
 
 .rank-empty {
-  padding: 6px 8px;
-  color: var(--color-muted);
+  padding: var(--space-2) var(--space-3);
+  color: var(--muted);
 }
 
-/* Result charts */
-.chart {
-  --chart-main: var(--app-choose-color);
-  --chart-track: color-mix(in srgb, var(--color-ink) 9%, var(--color-surface));
-}
+/* ---------- Result charts (monochrome: ink on tint) ---------- */
 
 .chart > * + * {
-  margin-top: 6px;
+  margin-top: var(--space-2);
 }
 
 .chart-row {
   display: grid;
-  grid-template-columns: minmax(0, 9rem) minmax(0, 1fr) minmax(3rem, auto);
-  gap: 8px;
+  grid-template-columns: minmax(0, 9em) minmax(0, 1fr) minmax(3em, auto);
+  gap: var(--space-2) var(--space-3);
   align-items: center;
 }
 
@@ -655,7 +803,7 @@ body > div > p[role="alert"] {
 }
 
 .chart-value {
-  color: var(--color-muted);
+  color: var(--muted);
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
@@ -664,9 +812,9 @@ body > div > p[role="alert"] {
   position: relative;
   display: flex;
   gap: 2px;
-  height: 12px;
-  background: var(--chart-track);
-  border-radius: 4px;
+  height: 0.6em;
+  background: var(--tint);
+  border-radius: 0.3em;
   overflow: hidden;
 }
 
@@ -674,41 +822,39 @@ body > div > p[role="alert"] {
   display: block;
   height: 100%;
   min-width: 0;
-  background: var(--chart-main);
-  border-radius: 0 4px 4px 0;
+  background: var(--fg);
+  border-radius: 0 0.3em 0.3em 0;
 }
 
-.chart-score { --chart-main: var(--app-score-color); }
-.chart-allocate,
-.chart-rank,
-.chart-irv,
-.chart-stv { --chart-main: var(--app-rank-color); }
-.chart-sense_check,
-.chart-consent,
-.chart-consensus,
-.chart-majority { --chart-main: var(--app-proposal-color); }
-
 .chart .chart-available,
-.chart .chart-elected { background: var(--app-time-color); }
-.chart .chart-if_needed { background: var(--app-score-color); }
-.chart .chart-unavailable { background: color-mix(in srgb, var(--color-muted) 55%, transparent); }
-.chart .chart-eliminated { background: color-mix(in srgb, var(--color-muted) 55%, transparent); }
+.chart .chart-elected {
+  background: var(--fg);
+}
+
+.chart .chart-if_needed {
+  background: var(--muted);
+}
+
+.chart .chart-unavailable,
+.chart .chart-eliminated {
+  background: var(--rule);
+}
 
 .chart-threshold {
   position: absolute;
   top: 0;
   bottom: 0;
   width: 0;
-  border-left: 2px dashed var(--color-ink);
+  border-left: 2px dashed var(--fg);
 }
 
 .chart-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 14px;
+  gap: var(--space-1) var(--space-4);
   margin: 0;
-  color: var(--color-muted);
-  font-size: 0.9rem;
+  color: var(--muted);
+  font-size: 0.9em;
 }
 
 .chart > .chart-legend {
@@ -717,40 +863,38 @@ body > div > p[role="alert"] {
 
 .chart-swatch {
   display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 2px;
-  background: var(--chart-main);
+  width: 0.6em;
+  height: 0.6em;
+  border-radius: 0.15em;
+  background: var(--fg);
 }
 
 .chart-threshold-swatch {
   width: 0;
-  border-left: 2px dashed var(--color-ink);
+  border-left: 2px dashed var(--fg);
   border-radius: 0;
   background: none;
 }
 
 .round h4 {
-  margin: 12px 0 6px;
+  margin: var(--space-4) 0 var(--space-2);
 }
 
 .round h4 small {
-  margin-left: 4px;
-  color: var(--color-muted);
-  font-weight: normal;
+  margin-left: var(--space-1);
+  color: var(--muted);
+  font-size: 1em;
 }
 
 .round-bars > * + * {
-  margin-top: 6px;
+  margin-top: var(--space-2);
 }
 
 .chart-mark {
-  margin-left: 4px;
-  font-size: 0.8rem;
-  font-weight: normal;
+  margin-left: var(--space-1);
+  font-size: 0.85em;
+  font-weight: inherit;
 }
-
-.chart-mark-elected { color: var(--app-time-color); }
 
 @media (max-width: 480px) {
   .chart-row {
@@ -760,5 +904,27 @@ body > div > p[role="alert"] {
   .chart-track {
     grid-column: 1 / -1;
     grid-row: 2;
+  }
+}
+
+/* The site's rounder, squircle corners where the browser supports them. */
+@supports (corner-shape: superellipse(2)) {
+  .callout,
+  .card,
+  .option-block,
+  .table-wrap,
+  .rank-list,
+  [role="alert"] {
+    border-radius: 2em;
+    corner-shape: superellipse(2);
+  }
+
+  .button,
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea,
+  .rank-item {
+    border-radius: 0.75em;
+    corner-shape: superellipse(1.4);
   }
 }
