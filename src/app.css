@@ -138,13 +138,6 @@ fieldset {
   justify-self: start;
 }
 
-/* Section headings read like a document outline. */
-section > h2,
-.section-head {
-  padding-bottom: var(--space-2);
-  border-bottom: 1px solid var(--color-border);
-}
-
 .section-head {
   display: flex;
   flex-wrap: wrap;
@@ -281,8 +274,6 @@ details[open] > summary {
 
 /* A collapsible form section: its summary looks like a section heading. */
 .form-details > summary {
-  padding-bottom: var(--space-2);
-  border-bottom: 1px solid var(--color-border);
   font-size: 15px;
   font-weight: 600;
 }
