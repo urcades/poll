@@ -728,7 +728,9 @@ table.round-log {
   gap: var(--space-2);
 }
 
+/* Bottom-aligned with the inputs (the drag handle stays centered). */
 .option-actions {
+  align-self: end;
   display: flex;
   gap: var(--space-1);
   flex-wrap: wrap;
