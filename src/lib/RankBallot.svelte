@@ -15,8 +15,20 @@
   let enhanced = $state(false);
   let ranked = $state<number[]>([]);
   let announcement = $state("");
-  let dragId = $state<number | null>(null);
-  let dropTarget = $state<string | null>(null);
+  // Pointer dragging (mouse and pen). A press only becomes a drag after 4px
+  // of movement, so a plain click still ranks or unranks. Touch keeps taps and
+  // the arrow buttons, so swiping over the ballot still scrolls the page.
+  type Press = { id: number; pointerId: number; x: number; y: number; from: "ranked" | "unranked" };
+  let press: Press | null = null;
+  let drag = $state<(Press & { startY: number }) | null>(null);
+  let dragX = $state(0);
+  let dragY = $state(0);
+  let dropTarget = $state<"ranked" | "unranked" | null>(null);
+  let rankedList: HTMLElement | undefined = $state();
+  let unrankedList: HTMLElement | undefined = $state();
+  let pointer = { x: 0, y: 0 };
+  let reordering = false;
+  let suppressClick = false;
   let root: HTMLElement | undefined = $state();
 
   const unranked = $derived(options.filter((option) => !ranked.includes(option.id)));
@@ -82,6 +94,8 @@
   }
 
   function toggle(id: number) {
+    // The click that ends a drag is not a toggle.
+    if (suppressClick) return;
     // Focus follows the item into its new list.
     if (ranked.includes(id) ? unrank(id) : rank(id)) refocus(id);
   }
@@ -100,48 +114,104 @@
     if (target !== undefined) refocus(target);
   }
 
-  function onDragStart(event: DragEvent, id: number) {
-    dragId = id;
-    event.dataTransfer?.setData("text/plain", String(id));
-    if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+  function pressItem(event: PointerEvent, id: number, from: Press["from"]) {
+    if (event.button !== 0 || event.pointerType === "touch") return;
+    if ((event.target as Element).closest(".rank-move")) return;
+    press = { id, pointerId: event.pointerId, x: event.clientX, y: event.clientY, from };
   }
 
-  function onDragEnd() {
-    dragId = null;
+  function listUnder(x: number, y: number): Press["from"] | null {
+    for (const [name, list] of [["ranked", rankedList], ["unranked", unrankedList]] as const) {
+      const box = list?.getBoundingClientRect();
+      if (box && x >= box.left && x <= box.right && y >= box.top && y <= box.bottom) return name;
+    }
+    return null;
+  }
+
+  async function movePointer(event: PointerEvent) {
+    if (press && !drag && event.pointerId === press.pointerId) {
+      if (Math.hypot(event.clientX - press.x, event.clientY - press.y) < 4) return;
+      try {
+        (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+      } catch {
+        // Capture only fails for pointers the browser no longer tracks.
+      }
+      drag = { ...press, startY: press.y };
+    }
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    pointer = { x: event.clientX, y: event.clientY };
+    dragX = pointer.x - drag.x;
+    dragY = pointer.y - drag.startY;
+    dropTarget = listUnder(pointer.x, pointer.y);
+    if (drag.from === "ranked" && dropTarget === "ranked") await reorderRanked();
+  }
+
+  /** Live reorder within the ranked list as the item passes a neighbour's middle. */
+  async function reorderRanked() {
+    if (reordering || !rankedList) return;
+    reordering = true;
+    try {
+      while (drag && rankedList) {
+        const items = [...rankedList.querySelectorAll<HTMLElement>(":scope > .rank-item")];
+        const index = ranked.indexOf(drag.id);
+        const item = items[index];
+        if (!item) break;
+        // Layout positions (offsetTop ignores the drag transform).
+        const center = item.offsetTop + item.offsetHeight / 2 + dragY;
+        const next = items[index + 1];
+        const previous = items[index - 1];
+        const to = next && center > next.offsetTop + next.offsetHeight / 2 ? index + 1
+          : previous && center < previous.offsetTop + previous.offsetHeight / 2 ? index - 1
+          : index;
+        if (to === index) break;
+        const before = item.offsetTop;
+        const reordered = [...ranked];
+        reordered.splice(index, 1);
+        reordered.splice(to, 0, drag.id);
+        ranked = reordered;
+        await tick();
+        if (!drag) break;
+        // Keep the item under the pointer now that its slot has moved.
+        drag.startY += item.offsetTop - before;
+        dragY = pointer.y - drag.startY;
+      }
+    } finally {
+      reordering = false;
+    }
+  }
+
+  function endDrag() {
+    press = null;
+    drag = null;
+    dragX = 0;
+    dragY = 0;
     dropTarget = null;
   }
 
-  function allowDrop(event: DragEvent, target: string) {
-    if (dragId === null) return;
-    event.preventDefault();
-    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
-    dropTarget = target;
-  }
-
-  /** Drop onto the ranked list, before `beforeId` (or at the end). */
-  function dropRanked(event: DragEvent, beforeId: number | null) {
-    event.preventDefault();
-    event.stopPropagation();
-    const id = dragId;
-    onDragEnd();
-    if (id === null) return;
-    const wasRanked = ranked.includes(id);
-    if (!wasRanked && full) {
-      say(`Cannot rank more than ${maxRanks} option${maxRanks === 1 ? "" : "s"}. Unrank one first.`);
+  function releasePointer(event: PointerEvent) {
+    if (!drag || event.pointerId !== drag.pointerId) {
+      if (press?.pointerId === event.pointerId) press = null;
       return;
     }
-    const next = ranked.filter((other) => other !== id);
-    const at = beforeId === null || beforeId === id ? next.length : next.indexOf(beforeId);
-    next.splice(at < 0 ? next.length : at, 0, id);
-    ranked = next;
-    say(`${label(id)} ${wasRanked ? "moved to" : "ranked"} ${next.indexOf(id) + 1} of ${next.length}.`);
-  }
-
-  function dropUnranked(event: DragEvent) {
-    event.preventDefault();
-    const id = dragId;
-    onDragEnd();
-    if (id !== null) unrank(id);
+    const { id, from } = drag;
+    const target = listUnder(event.clientX, event.clientY);
+    const y = event.clientY;
+    endDrag();
+    suppressClick = true;
+    setTimeout(() => (suppressClick = false));
+    if (from === "unranked" && target === "ranked") {
+      // Insert where it was dropped: after every ranked item whose middle is above the pointer.
+      const items = [...(rankedList?.querySelectorAll<HTMLElement>(":scope > .rank-item") ?? [])];
+      const at = items.filter((item) => {
+        const box = item.getBoundingClientRect();
+        return box.top + box.height / 2 < y;
+      }).length;
+      if (rank(id, at)) refocus(id);
+    } else if (from === "ranked" && target === "unranked") {
+      if (unrank(id)) refocus(id);
+    } else if (from === "ranked" && target === "ranked") {
+      say(`${label(id)} moved to rank ${ranked.indexOf(id) + 1} of ${ranked.length}.`);
+    }
   }
 </script>
 
@@ -170,26 +240,18 @@
     <div class="rank-lists">
       <div>
         <h3 id="ranked-heading">Ranked ({ranked.length}{limited ? ` of ${maxRanks}` : ""})</h3>
-        <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-        <ol
-          class="rank-list"
-          class:rank-drop={dropTarget === "ranked"}
-          aria-labelledby="ranked-heading"
-          ondragover={(event) => allowDrop(event, "ranked")}
-          ondragleave={() => (dropTarget = null)}
-          ondrop={(event) => dropRanked(event, null)}
-        >
+        <ol class="rank-list" class:rank-drop={drag && dropTarget === "ranked"} aria-labelledby="ranked-heading" bind:this={rankedList}>
           {#each ranked as id, index (id)}
             <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
             <li
               class="rank-item"
-              class:dragging={dragId === id}
+              class:lifted={drag?.id === id}
+              style:transform={drag?.id === id ? `translate(${dragX}px, ${dragY}px)` : null}
               data-item={id}
-              draggable="true"
-              ondragstart={(event) => onDragStart(event, id)}
-              ondragend={onDragEnd}
-              ondragover={(event) => allowDrop(event, "ranked")}
-              ondrop={(event) => dropRanked(event, id)}
+              onpointerdown={(event) => pressItem(event, id, "ranked")}
+              onpointermove={movePointer}
+              onpointerup={releasePointer}
+              onpointercancel={endDrag}
             >
               <span class="rank-number" aria-hidden="true">{index + 1}</span>
               <button type="button" class="rank-main" data-control="main" aria-label={`${label(id)}, rank ${index + 1}. Select to remove from ranking.`} onclick={() => toggle(id)} onkeydown={(event) => onKeydown(event, id, "main")}>{label(id)}</button>
@@ -204,17 +266,19 @@
 
       <div>
         <h3 id="unranked-heading">Not ranked ({unranked.length})</h3>
-        <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-        <ul
-          class="rank-list"
-          class:rank-drop={dropTarget === "unranked"}
-          aria-labelledby="unranked-heading"
-          ondragover={(event) => allowDrop(event, "unranked")}
-          ondragleave={() => (dropTarget = null)}
-          ondrop={dropUnranked}
-        >
+        <ul class="rank-list" class:rank-drop={drag && dropTarget === "unranked"} aria-labelledby="unranked-heading" bind:this={unrankedList}>
           {#each unranked as option (option.id)}
-            <li class="rank-item" class:dragging={dragId === option.id} data-item={option.id} draggable="true" ondragstart={(event) => onDragStart(event, option.id)} ondragend={onDragEnd}>
+            <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+            <li
+              class="rank-item"
+              class:lifted={drag?.id === option.id}
+              style:transform={drag?.id === option.id ? `translate(${dragX}px, ${dragY}px)` : null}
+              data-item={option.id}
+              onpointerdown={(event) => pressItem(event, option.id, "unranked")}
+              onpointermove={movePointer}
+              onpointerup={releasePointer}
+              onpointercancel={endDrag}
+            >
               <button type="button" class="rank-main" data-control="main" aria-disabled={full} aria-label={`${option.label}. Select to rank it.`} onclick={() => toggle(option.id)} onkeydown={(event) => onKeydown(event, option.id, "main")}>{option.label}</button>
             </li>
           {:else}

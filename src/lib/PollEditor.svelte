@@ -403,7 +403,7 @@
       {#each optionItems as option, index (option.uid)}
         <article
           class={`option-block option-block-${selectedType}`}
-          class:dragging={drag?.uid === option.uid}
+          class:lifted={drag?.uid === option.uid}
           style:--option-pattern={optionPattern(option.uid)}
           style:transform={drag?.uid === option.uid ? `translateY(${dragOffset}px)` : null}
           data-index={index}
