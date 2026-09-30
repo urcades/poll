@@ -19,6 +19,7 @@
   --bg: var(--paper-tone);
   --fg: var(--ink);
   --error: oklch(50% 0.16 30);
+  --check-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.3l2.3 2.3 4.7-5' fill='none' stroke='%23efedef' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   --select-caret: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%231b1b1b' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   color-scheme: light;
 }
@@ -28,6 +29,7 @@
     --bg: var(--ink);
     --fg: var(--white);
     --error: oklch(76% 0.13 30);
+    --check-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.3l2.3 2.3 4.7-5' fill='none' stroke='%231b1b1b' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
     --select-caret: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%23ffffff' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
     color-scheme: dark;
   }
@@ -332,10 +334,11 @@ label:has(> input[type="checkbox"]) {
   gap: var(--space-2);
 }
 
+/* Centered on the label's first line: (line height − control size) / 2. */
 label > input[type="radio"],
 label > input[type="checkbox"] {
   flex: none;
-  margin: 0.2em 0 0;
+  margin: calc((1.33em - 0.8em) / 2) 0 0;
 }
 
 .choice-meaning {
@@ -443,9 +446,49 @@ summary {
   cursor: pointer;
 }
 
+/* Drawn controls in em, so they scale with the type: an ink ring for
+   radios (filled with a dot when chosen), a soft ink box for checkboxes. */
 input[type="checkbox"],
 input[type="radio"] {
-  accent-color: var(--fg);
+  appearance: none;
+  display: inline-grid;
+  place-content: center;
+  /* Size from the label's text, not the browser's small control font. */
+  font-size: inherit;
+  width: 0.8em;
+  height: 0.8em;
+  margin: 0;
+  border: 1px solid var(--fg);
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type="radio"] {
+  border-radius: 50%;
+}
+
+input[type="radio"]:checked {
+  background: var(--fg);
+  box-shadow: inset 0 0 0 0.16em var(--bg);
+}
+
+input[type="checkbox"] {
+  border-radius: 0.2em;
+}
+
+input[type="checkbox"]:checked {
+  background: var(--fg) var(--check-mark) center / 90% no-repeat;
+}
+
+input[type="checkbox"]:focus-visible,
+input[type="radio"]:focus-visible {
+  outline-offset: 2px;
+}
+
+input[type="checkbox"]:disabled,
+input[type="radio"]:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 input:disabled,
