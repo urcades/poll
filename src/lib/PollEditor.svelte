@@ -320,24 +320,28 @@
         <Button type="button" id="add-option" onclick={addOption}>Add option</Button>
       {/if}
     </div>
+    {#if fixed}
+      <!-- Proposal positions are part of the outcome logic, so they read as text, not fields. -->
+      <ul class="fixed-positions">
+        {#each optionItems as option (option.uid)}
+          <li>
+            <span>{option.label}</span>
+            {#if option.meaning}<span class="choice-meaning">{option.meaning}</span>{/if}
+          </li>
+        {/each}
+      </ul>
+    {:else}
     <div id="option-blocks" class="option-blocks">
       {#each optionItems as option, index (option.uid)}
         <article
           class={`option-block option-block-${selectedType}`}
-          class:option-block-fixed={fixed}
-          draggable={!fixed}
+          draggable="true"
           data-index={index}
           ondragstart={(event) => {
-            if (fixed) {
-              event.preventDefault();
-              return;
-            }
             draggedIndex = index;
             event.dataTransfer?.setData("text/plain", String(index));
           }}
-          ondragover={(event) => {
-            if (!fixed) event.preventDefault();
-          }}
+          ondragover={(event) => event.preventDefault()}
           ondrop={(event) => {
             event.preventDefault();
             const from = Number(event.dataTransfer?.getData("text/plain") || draggedIndex);
@@ -345,9 +349,7 @@
             draggedIndex = null;
           }}
         >
-          {#if !fixed}
-            <span class="drag-handle" title="Drag to reorder" aria-hidden="true">⠿</span>
-          {/if}
+          <span class="drag-handle" title="Drag to reorder" aria-hidden="true">⠿</span>
           <div class="option-fields">
             {#if selectedType === "time_poll"}
               <label>
@@ -360,24 +362,23 @@
             {:else}
               <label>
                 {selectedType === "irv" || selectedType === "stv" ? "Candidate" : "Label"}
-                <input value={option.label} required readonly={fixed} oninput={(event) => updateOption(index, { label: event.currentTarget.value })} />
+                <input value={option.label} required oninput={(event) => updateOption(index, { label: event.currentTarget.value })} />
               </label>
             {/if}
             <label>
               {selectedType === "time_poll" ? "Note" : "Meaning"}
-              <input value={option.meaning} placeholder={fixed ? "" : "Optional"} readonly={fixed} oninput={(event) => updateOption(index, { meaning: event.currentTarget.value })} />
+              <input value={option.meaning} placeholder="Optional" oninput={(event) => updateOption(index, { meaning: event.currentTarget.value })} />
             </label>
           </div>
-          {#if !fixed}
-            <div class="option-actions">
-              <Button type="button" disabled={index === 0} onclick={() => moveOption(index, index - 1)}>Up</Button>
-              <Button type="button" disabled={index === optionItems.length - 1} onclick={() => moveOption(index, index + 1)}>Down</Button>
-              <Button type="button" disabled={optionItems.length <= 1} onclick={() => removeOption(index)}>Remove</Button>
-            </div>
-          {/if}
+          <div class="option-actions">
+            <Button type="button" disabled={index === 0} onclick={() => moveOption(index, index - 1)}>Up</Button>
+            <Button type="button" disabled={index === optionItems.length - 1} onclick={() => moveOption(index, index + 1)}>Down</Button>
+            <Button type="button" disabled={optionItems.length <= 1} onclick={() => removeOption(index)}>Remove</Button>
+          </div>
         </article>
       {/each}
     </div>
+    {/if}
     <textarea name="optionsText" id="optionsText" class="raw-options" aria-hidden="true" tabindex="-1" value={serializedOptions}></textarea>
     <p class="hint" id="options-hint">{optionsHint}</p>
   </section>

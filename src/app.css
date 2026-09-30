@@ -693,8 +693,25 @@ table.round-log {
   background-color: var(--paper);
 }
 
-.option-block-fixed {
-  grid-template-columns: minmax(0, 1fr);
+/* Fixed proposal positions: one grained card, a hairline between rows. */
+.fixed-positions {
+  margin: 0;
+  padding: var(--space-1) var(--space-4);
+  list-style: none;
+  border-radius: var(--radius-card);
+  background-color: var(--tint);
+  background-image: var(--noise);
+}
+
+.fixed-positions > li {
+  display: grid;
+  gap: 0.1em;
+  margin: 0;
+  padding: var(--space-3) 0;
+}
+
+.fixed-positions > li + li {
+  border-top: 1px solid var(--rule);
 }
 
 .drag-handle {
@@ -990,6 +1007,7 @@ table.round-log {
   .callout,
   .card,
   .option-block,
+  .fixed-positions,
   .table-wrap,
   .rank-list,
   [role="alert"] {
