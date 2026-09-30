@@ -7,8 +7,14 @@ import { hashSeed, mulberry32 } from "./shuffle";
  * new value, and seeded parameters (angle, mark size, weight, strength) vary
  * the rest. Marks are small and far apart, so the textures stay sparse.
  * Tiles are drawn in black and used as a CSS mask over an ink layer, so the
- * app decides the color and opacity.
+ * app decides the color and opacity. Every texture is canted by CANT_DEGREES:
+ * the tile fills an SVG <pattern> rotated by that angle, painted over one
+ * canvas larger than any card (a rotated tile can't repeat seamlessly on its
+ * own, but a rotated <pattern> can).
  */
+
+const CANT_DEGREES = 33;
+const CANVAS = { width: 2000, height: 600 };
 
 type Tile = { width: number; height: number; body: string };
 type Family = (random: () => number, spacing: (min: number, max: number) => number, seed: number) => Tile;
@@ -49,7 +55,7 @@ const FAMILIES: Family[] = [
   // Sparse speckle: a different turbulence per seed, thresholded to scattered grains.
   (random, _spacing, seed) => {
     const frequency = between(random, 0.6, 1.1);
-    const body = `<filter id='n'><feTurbulence type='fractalNoise' baseFrequency='${frequency}' numOctaves='2' seed='${seed}' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 6 -4.1'/></filter><rect width='100%' height='100%' filter='url(#n)'/>`;
+    const body = `<filter id='n'><feTurbulence type='fractalNoise' baseFrequency='${frequency}' numOctaves='2' seed='${seed}' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 6 -4.1'/></filter><rect width='200' height='200' filter='url(#n)'/>`;
     return { width: 200, height: 200, body };
   },
   // Offset (staggered) dots.
@@ -124,7 +130,8 @@ export function optionPattern(seed: number): string {
   const { width, height, body } = family(random, spacing, seed);
   // A seeded ink strength per tile: one more dimension of variety.
   const strength = between(random, 0.6, 1);
-  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${width}' height='${height}'><g opacity='${strength}'>${body}</g></svg>`;
+  const tile = `<pattern id='p' width='${width}' height='${height}' patternUnits='userSpaceOnUse' patternTransform='rotate(${CANT_DEGREES})'><g opacity='${strength}'>${body}</g></pattern>`;
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${CANVAS.width}' height='${CANVAS.height}'><defs>${tile}</defs><rect width='${CANVAS.width}' height='${CANVAS.height}' fill='url(#p)'/></svg>`;
   return `url("data:image/svg+xml,${svg.replaceAll("#", "%23").replaceAll("<", "%3C").replaceAll(">", "%3E")}")`;
 }
 
