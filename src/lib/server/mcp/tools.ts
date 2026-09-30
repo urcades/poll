@@ -378,7 +378,8 @@ function ballotGuide(poll: Poll, options: Option[]): { summary: string; example:
       summary = "";
       example = {};
   }
-  if (config.voterMode === "invite") summary += " You vote as your invitee name; `voterName` is ignored.";
+  if (config.voterMode === "invite") summary += ` You vote as your invitee name; \`voterName\` is ignored.${config.anonymous ? " The poll is anonymous: its admin sees that you voted, not how." : ""}`;
+  else if (config.anonymous) summary += " The poll is anonymous: no `voterName` is needed (any given is ignored), and no one, including its admin, can see how you voted.";
   else example = { voterName: "Your display name", ...example };
   if (config.reasonMode === "required") {
     summary += " A `reason` is required.";
@@ -491,7 +492,8 @@ function pollView(poll: Poll, ctx: ToolContext): Record<string, unknown> {
     you: {
       role: adminToken ? "admin" : isAdmin ? "operator" : invite ? "invitee" : viewerVote ? "voter" : "visitor",
       isAdmin,
-      votingAs: viewerName || null,
+      // Anonymous open-link ballots carry only an internal key; never show it.
+      votingAs: viewerName ? (fresh.config.anonymous && fresh.config.voterMode !== "invite" ? "Anonymous" : viewerName) : null,
       yourVote: viewerVote ? { ...describeBallot(fresh, options, viewerVote.ballot), reason: viewerVote.reason, updatedAt: viewerVote.updatedAt } : null,
       ...(viewerVote && voteToken && !invite ? { voteToken } : {}),
       canVote: reason === null,
@@ -530,7 +532,7 @@ const SETTINGS_SCHEMA: JsonSchema = {
   type: "object",
   description: "Optional settings; anything left out uses the poll type's default (see list_poll_types).",
   properties: {
-    anonymous: { type: "boolean", description: "Hide voter names and reasons in results and exports." },
+    anonymous: { type: "boolean", description: "Voters give no name (open polls) and no one, including the admin, can see how anyone voted; reasons are shown without names. Invite-only polls still show the admin who has voted, not how." },
     hideResults: { type: "string", enum: ["off", "after_vote", "after_close"], description: "When results become visible. Default after_vote (voters see results once they have voted; the admin always does)." },
     allowVoteChanges: { type: "boolean", description: "Let voters change a ballot after casting it. Default false (votes are final)." },
     reasonMode: { type: "string", enum: ["optional", "required", "disabled"], description: "Whether voters give a written reason. Default optional." },
@@ -719,12 +721,12 @@ export const tools: ToolDefinition[] = [
   {
     name: "cast_vote",
     title: "Cast or update a vote",
-    description: "Vote in an open poll. Fill in the one ballot field for the poll's type (get_poll's `howToVote` says which, with an example): `choice` for proposals, `selected` for choose/approval, `scores` for score, `allocations` for allocate, `ranking` for rank/irv/stv, `availability` for time polls. Options can be named by label or id. Open polls need a `voterName`; invite-only polls vote as the invitee whose link you used. Each session votes as one person; votes are final unless the poll allows changes. Returns a `voteToken` to update this ballot later from another session.",
+    description: "Vote in an open poll. Fill in the one ballot field for the poll's type (get_poll's `howToVote` says which, with an example): `choice` for proposals, `selected` for choose/approval, `scores` for score, `allocations` for allocate, `ranking` for rank/irv/stv, `availability` for time polls. Options can be named by label or id. Open polls need a `voterName`, except anonymous ones, which take no name; invite-only polls vote as the invitee whose link you used. Each session votes as one person; votes are final unless the poll allows changes. Returns a `voteToken` to update this ballot later from another session.",
     inputSchema: {
       type: "object",
       properties: {
         poll: POLL_ARG,
-        voterName: { type: "string", description: "Your display name (open polls; max 80 characters). Ignored in invite-only polls." },
+        voterName: { type: "string", description: "Your display name (open polls; max 80 characters). Ignored in invite-only and anonymous polls." },
         reason: { type: "string", description: "Why you voted this way. Optional, required, or disabled depending on the poll." },
         choice: { type: ["string", "integer"], description: "Proposals (sense_check, consent, consensus, majority): the one position you take, e.g. \"Agree\"." },
         selected: { type: "array", items: { type: ["string", "integer"] }, description: "choose / approval: the options you pick." },
@@ -773,7 +775,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "get_results",
     title: "Get results",
-    description: "The current tally for a poll, if results are visible to you: the outcome, quorum, per-option counts or scores, round-by-round transfers for IRV/STV, and voters' names and reasons unless the poll is anonymous. Visibility follows the poll's rules (for example only after you vote, or only once it closes).",
+    description: "The current tally for a poll, if results are visible to you: the outcome, quorum, per-option counts or scores, round-by-round transfers for IRV/STV, and voters' names and reasons (anonymous polls show reasons only, without names, in alphabetical order as \`anonymousReasons\`). Visibility follows the poll's rules (for example only after you vote, or only once it closes).",
     inputSchema: {
       type: "object",
       properties: { poll: POLL_ARG, adminToken: ADMIN_TOKEN_ARG, inviteToken: INVITE_TOKEN_ARG, voteToken: VOTE_TOKEN_ARG },
@@ -990,7 +992,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "export_results",
     title: "Export results",
-    description: "Full export of a closed poll (admin only): the poll, its options, the complete tally, and every ballot. Anonymous polls replace names with \"Voter N\", drop reasons and timestamps, and shuffle ballot order. Same data as the web JSON export.",
+    description: "Full export of a closed poll (admin only): the poll, its options, the complete tally, and every ballot. Anonymous polls replace names with \"Voter N\", drop timestamps, and shuffle ballot order; reasons stay beside their unnamed ballots. Same data as the web JSON export.",
     inputSchema: { type: "object", properties: { poll: POLL_ARG, adminToken: ADMIN_TOKEN_ARG }, required: ["poll"], additionalProperties: false },
     annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     run(args, ctx) {

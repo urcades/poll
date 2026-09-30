@@ -370,14 +370,22 @@ export async function submitVote(poll: Poll, options: Option[], request: Request
 export function submitVoteData(poll: Poll, options: Option[], data: Record<string, unknown>, cookies: Cookies) {
   const invite = poll.config.voterMode === "invite" ? currentInvite(cookies, poll) : null;
   if (poll.config.voterMode === "invite" && !invite) throw new InviteRequiredError();
-  const vote = voteInputFromData(data, poll, options, invite?.name);
+  // Anonymous open-link polls take no name: the ballot is keyed to this
+  // browser's vote token instead (one vote per browser still holds).
+  const anonymousToken = poll.config.anonymous && !invite ? voteTokenFor(cookies, poll.id) || crypto.randomUUID() : "";
+  const vote = voteInputFromData(data, poll, options, invite?.name ?? (anonymousToken ? anonymousVoterName(anonymousToken) : undefined));
   // Final votes: once this browser has a ballot in the poll, it can't cast
   // another under any name, unless the poll allows changes or it's the admin.
-  const token = invite?.token || voteTokenFor(cookies, poll.id);
+  const token = invite?.token || anonymousToken || voteTokenFor(cookies, poll.id);
   if (!poll.config.allowVoteChanges && token && getStore().hasVoteToken(poll.id, token) && !isPollAdmin(cookies, poll.id)) {
     throw new Error(VOTE_LOCKED_MESSAGE);
   }
-  recordVote(poll, vote, cookies, invite?.token);
+  recordVote(poll, vote, cookies, invite?.token || anonymousToken);
+}
+
+/** Internal key for an anonymous ballot: stable per browser, meaningless to anyone reading it. */
+export function anonymousVoterName(token: string): string {
+  return `Anonymous ${hashToken(`anonymous:${token}`).slice(0, 10)}`;
 }
 
 export interface InvitationView {
@@ -499,7 +507,7 @@ export function exportVotes(poll: Poll, votes: Vote[]): Array<{ voterName: strin
     .map((vote, index) => ({
       voterName: `Voter ${index + 1}`,
       ballot: vote.ballot,
-      reason: "",
+      reason: vote.reason,
       updatedAt: ""
     }));
 }

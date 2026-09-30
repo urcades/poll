@@ -352,3 +352,30 @@ describe("MCP decision flows", () => {
     expect((orphan.body as Json).result.structuredContent.active).toEqual([]);
   });
 });
+
+describe("MCP anonymous polls", () => {
+  test("agents vote without a name, never see the internal key, and see reasons without names", () => {
+    const admin = connect();
+    const created = admin.call("create_poll", { type: "choose", title: "Where to eat?", options: ["Hall", "Park", "Cafe"], open: true, settings: { anonymous: true, hideResults: "off" } });
+
+    const guide = admin.call("get_poll", { poll: created.id }).howToVote;
+    expect(guide.summary).toContain("anonymous");
+    expect(guide.example.voterName).toBeUndefined();
+
+    const agent = connect();
+    const voted = agent.call("cast_vote", { poll: created.id, selected: ["Park"], reason: "Shade." });
+    expect(voted.votingAs).toBe("Anonymous");
+    // A submitted name is ignored rather than stored.
+    connect().call("cast_vote", { poll: created.id, voterName: "Mallory", selected: ["Hall"], reason: "Close by." });
+
+    const results = admin.call("get_results", { poll: created.id });
+    const text = JSON.stringify(results);
+    expect(text).toContain("Shade.");
+    expect(text).not.toContain("Mallory");
+    expect(text).not.toMatch(/Anonymous [0-9a-f]{10}/);
+    expect(JSON.stringify(results)).toContain('"anonymousReasons":["Close by.","Shade."]');
+
+    // One vote per session still holds.
+    expect(agent.fail("cast_vote", { poll: created.id, selected: ["Cafe"] })).toContain("can't be changed");
+  });
+});

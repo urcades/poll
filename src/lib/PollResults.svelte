@@ -78,6 +78,17 @@
       </div>
     </details>
   {/if}
+  {#if poll.config.anonymous && poll.config.reasonMode !== "disabled" && tally.anonymousReasons?.length}
+    <details>
+      <summary>Reasons</summary>
+      <p class="hint">This poll is anonymous: reasons are shown without names, in alphabetical order.</p>
+      <ul>
+        {#each tally.anonymousReasons as reason, index (index)}
+          <li>{reason}</li>
+        {/each}
+      </ul>
+    </details>
+  {/if}
   {#if !poll.config.anonymous && poll.config.reasonMode !== "disabled" && tally.voteDetails?.length}
     <details>
       <summary>Vote reasons</summary>

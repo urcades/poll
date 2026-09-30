@@ -222,11 +222,11 @@ Runtime data is stored locally in `work/votes.sqlite`, which is ignored by Git. 
 
 Invite links are never stored. Each invitee's token is derived as HMAC-SHA256 keyed by the poll's admin token over `invite:<invite id>` (base64url), and only its SHA-256 hash goes in the `invites` table. The admin page regenerates every link from the admin's own cookie, exactly like the admin link, so a database leak yields no usable invite link, and an operator who is not the poll's own admin sees invitee names and voted status but no links and cannot create new invitees. Losing the admin token means losing the ability to re-show the links (already-issued links keep working). Invite mode limits casual multiple voting under different names; it is not identity verification, since anyone who receives a link can vote as that invitee, and an invitee can forward it.
 
-The admin's invitation list shows who has voted, like a sign-in sheet, even when the poll is anonymous. Anonymous mode still hides names and reasons in results and exports, but not participation from the admin.
+The admin's invitation list shows who has voted, like a sign-in sheet, even when the poll is anonymous. Anonymous mode still hides how anyone voted, from the admin too, but not participation.
 
 Hidden results (before vote or before close) are enforced server-side: the tally and voter data are excluded from the page payload entirely, not just hidden in the UI. When results are shown for a non-anonymous poll, the page payload includes voter names and reasons but not full ballots; ballots appear only in the admin JSON/CSV export.
 
-Anonymous voting mode hides voter names and reasons in results and exports, but display names are still stored internally so a voter can update their own ballot. Anonymous exports are re-ordered and omit timestamps so they do not reveal submission order.
+Anonymous polls take no name in open-link mode: the ballot is keyed to the voting browser (an internal id derived from its vote token), so one vote per browser still holds and nobody, the admin included, can see how anyone voted. Results show reasons without names, in alphabetical order; anonymous exports list ballots as "Voter N" with their reasons, re-ordered and without timestamps so they do not reveal submission order. In invite-only mode invitees are known by name, so the admin sees who has voted (not how).
 
 ## Repository Shape
 

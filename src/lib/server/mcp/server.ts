@@ -24,7 +24,7 @@ Lifecycle: create_poll makes a draft -> open_poll starts voting now (or schedule
 
 Access:
 - Whoever creates a poll is its admin. create_poll returns an adminToken; keep it, because a later session needs it (pass adminToken, or the admin link as \`poll\`) to edit, open, close, invite, export or delete.
-- Anyone with a poll's link or id can read it and, for open polls, vote under a display name. Invite-only polls accept only invitees, each through their own personal link: pass that link as \`poll\`.
+- Anyone with a poll's link or id can read it and, for open polls, vote under a display name (anonymous polls take no name, and no one can see how anyone voted). Invite-only polls accept only invitees, each through their own personal link: pass that link as \`poll\`.
 - Each session votes as one person. cast_vote returns a voteToken to update that ballot later. Votes are final unless the poll allows changes.
 - Results follow the poll's visibility setting (often: only after you vote, or only once closed).
 

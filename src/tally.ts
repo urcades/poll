@@ -172,7 +172,10 @@ export function tallyPoll(poll: Poll, optionsInput: Option[], votes: Vote[]): Ta
     ...result,
     voteDetails: poll.config.anonymous
       ? undefined
-      : votes.map((vote) => ({ voterName: vote.voterName, ballot: vote.ballot, reason: vote.reason }))
+      : votes.map((vote) => ({ voterName: vote.voterName, ballot: vote.ballot, reason: vote.reason })),
+    anonymousReasons: poll.config.anonymous
+      ? votes.map((vote) => vote.reason.trim()).filter(Boolean).sort((a, b) => a.localeCompare(b))
+      : undefined
   };
 }
 

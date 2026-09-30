@@ -502,12 +502,65 @@ describe("SvelteKit app integration", () => {
     response = await getExport(exportJsonRoute, id);
     expect(response.status).toBe(200);
     const json = await response.json() as { votes: Array<{ voterName: string; reason: string; updatedAt: string }> };
-    expect(json.votes[0]).toEqual(expect.objectContaining({ voterName: "Voter 1", reason: "", updatedAt: "" }));
+    // No name was ever taken (the submitted "Ada" is ignored); the reason stays, unattributed.
+    expect(json.votes[0]).toEqual(expect.objectContaining({ voterName: "Voter 1", reason: "Private", updatedAt: "" }));
 
     const csv = await (await getExport(exportCsvRoute, id)).text();
     expect(csv).toContain('"Voter 1"');
     expect(csv).not.toContain("Ada");
-    expect(csv).not.toContain("Private");
+  });
+
+  describe("anonymous polls", () => {
+    test("take no name: the ballot is keyed to the browser and any submitted name is ignored", async () => {
+      const db = storeFixture();
+      const { id } = await createPoll({ anonymous: true });
+      await openPoll(id);
+      const options = db.getOptions(pid(db, id));
+      const voter = cookieJar();
+      const response = await postJson(voteRoute, { id }, { selected: [String(options[0]!.id)] }, voter);
+      expect(response.status).toBe(200);
+      const spoofed = cookieJar();
+      expect((await postJson(voteRoute, { id }, { voterName: "Ada", selected: [String(options[1]!.id)] }, spoofed)).status).toBe(200);
+      const names = db.getVotes(pid(db, id)).map((vote) => vote.voterName);
+      expect(names).toHaveLength(2);
+      expect(names.every((name) => name.startsWith("Anonymous "))).toBe(true);
+      expect(names).not.toContain("Ada");
+      // The voter's own page finds their ballot.
+      expect((await loadPoll(id, voter)).viewerVote).not.toBeNull();
+    });
+
+    test("still allow one vote per browser (and updates when changes are allowed)", async () => {
+      const db = storeFixture();
+      const locked = await createPoll({ anonymous: true, title: "Locked" });
+      const open = await createPoll({ anonymous: true, allowVoteChanges: true, title: "Open" });
+      await openPoll(locked.id);
+      await openPoll(open.id);
+      const voter = cookieJar();
+      const lockedOptions = db.getOptions(pid(db, locked.id));
+      await postJson(voteRoute, { id: locked.id }, { selected: [String(lockedOptions[0]!.id)] }, voter);
+      expect((await postJson(voteRoute, { id: locked.id }, { selected: [String(lockedOptions[1]!.id)] }, voter)).status).toBe(400);
+
+      const openOptions = db.getOptions(pid(db, open.id));
+      await postJson(voteRoute, { id: open.id }, { selected: [String(openOptions[0]!.id)] }, voter);
+      expect((await postJson(voteRoute, { id: open.id }, { selected: [String(openOptions[2]!.id)] }, voter)).status).toBe(200);
+      const votes = db.getVotes(pid(db, open.id));
+      expect(votes).toHaveLength(1);
+      expect((votes[0]!.ballot as { selected: number[] }).selected).toEqual([openOptions[2]!.id]);
+    });
+
+    test("show reasons without names, sorted, and never voter names", async () => {
+      const db = storeFixture();
+      const { id } = await createPoll({ anonymous: true, hideResults: "off" });
+      await openPoll(id);
+      const options = db.getOptions(pid(db, id));
+      for (const reason of ["Zebra crossing", "", "Apples"]) {
+        await postJson(voteRoute, { id }, { selected: [String(options[0]!.id)], reason }, cookieJar());
+      }
+      const page = await loadPoll(id, cookieJar());
+      expect(page.tally?.anonymousReasons).toEqual(["Apples", "Zebra crossing"]);
+      expect(page.tally?.voteDetails).toBeUndefined();
+      expect(JSON.stringify(page)).not.toContain("Anonymous ");
+    });
   });
 
   test("polls past their scheduled close read as closed in the database", async () => {
@@ -1722,7 +1775,8 @@ describe("results page", () => {
     expect(page.tally?.castVotes).toBe(1);
     expect(page.tally?.voteDetails).toBeUndefined();
     expect(JSON.stringify(page)).not.toContain("Ada");
-    expect(JSON.stringify(page)).not.toContain("secret reason");
+    // Reasons are shown, but never tied to a voter.
+    expect(page.tally?.anonymousReasons).toEqual(["secret reason"]);
     expect(page.voteCount).toBe(1);
   });
 

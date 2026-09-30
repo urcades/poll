@@ -488,7 +488,7 @@
     <div class="stack">
       <div class="field">
       <label><input type="checkbox" name="anonymous" checked={values.config.anonymous} /> Anonymous voting</label>
-      <p class="field-help">Hide voter names and reasons in results and exports. Display names are still stored internally so later votes can replace earlier ones.{#if voterMode === "invite"} In invite-only polls the admin's invitation list still shows which invitees have voted (not what they voted), like a sign-in sheet.{/if}</p>
+      <p class="field-help">{#if voterMode === "invite"}Invitees still vote through their personal links, so your Invitations list shows who has voted, but results and exports never show how anyone voted, not even to you. Reasons appear without names.{:else}Voters aren't asked for a name, and no one, including you, can see how anyone voted. Each browser can still vote only once. Reasons appear without names.{/if}</p>
       </div>
 
       <fieldset>

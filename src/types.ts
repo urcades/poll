@@ -133,6 +133,8 @@ export interface TallyResult {
   rows: ResultRow[];
   roundLogs?: RoundLog[];
   voteDetails?: Array<{ voterName: string; ballot: unknown; reason: string }>;
+  /** Anonymous polls: written reasons without names, sorted so their order reveals nothing. */
+  anonymousReasons?: string[];
 }
 
 /** Tally as sent to the browser: voter names and reasons only, never full ballots. */

@@ -214,7 +214,7 @@
         {@render VoteForm({ poll: data.poll, options: data.ballotOptions, viewerName: data.viewerName, viewerVote: data.viewerVote, inviteBallot: data.poll.config.voterMode === "invite", id: "vote-form" })}
       {:else}
         <!-- A cast vote is final here: show the ballot read-only. -->
-        <p>Your vote is in{data.viewerName ? `, ${data.viewerName}` : ""}. Votes on this poll can't be changed once cast.</p>
+        <p>Your vote is in{data.viewerName && !(data.poll.config.anonymous && data.poll.config.voterMode !== "invite") ? `, ${data.viewerName}` : ""}. Votes on this poll can't be changed once cast.</p>
         <div inert aria-disabled="true">
           {@render VoteForm({ poll: data.poll, options: data.ballotOptions, viewerName: data.viewerName, viewerVote: data.viewerVote, inviteBallot: data.poll.config.voterMode === "invite" })}
         </div>
@@ -291,6 +291,12 @@
   <form {id} method="post" action="?/vote" use:enhance={voteForm.enhance}>
     {#if inviteBallot}
       <p>Voting as <strong>{viewerName || "your invited name"}</strong></p>
+      {#if poll.config.anonymous}
+        <p class="hint">Your vote is anonymous: the poll's creator can see that you voted, but not how.</p>
+      {/if}
+    {:else if poll.config.anonymous}
+      <!-- Anonymous open-link polls take no name; the server keys the ballot to this browser. -->
+      <p class="hint">Anonymous poll: you won't be asked for a name, and no one, including the poll's creator, can see how you voted.</p>
     {:else}
       <label>{@render Required("Your display name")} <input name="voterName" required value={viewerName} /></label>
     {/if}
