@@ -346,6 +346,32 @@ label > input[type="checkbox"] {
   margin: calc((1.33em - 0.8em) / 2) 0 0;
 }
 
+/* The rule for a group of choices ("Choose up to 2"), under its label. */
+.legend-hint {
+  display: block;
+  margin-top: 0.1em;
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
+.label-hint {
+  color: var(--muted);
+}
+
+/* Marks a required field. Drawn by CSS with empty alt text, so it isn't part
+   of the label's name (the input itself carries `required`). */
+.required::after {
+  content: "*";
+  content: "*" / "";
+  padding-inline-start: 0.15em;
+}
+
+/* Options past a choose poll's limit grey out until one is unticked. */
+label:has(> input[type="checkbox"]:disabled) {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
 .choice-meaning {
   display: block;
   color: var(--muted);

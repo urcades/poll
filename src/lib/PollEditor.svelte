@@ -340,7 +340,7 @@
 
   <section>
     <h2>Question</h2>
-    <label>Title <input name="title" required value={values.title} /></label>
+    <label>{@render Required("Title")} <input name="title" required value={values.title} /></label>
     <label>Details <textarea name="details" rows="4">{values.details}</textarea></label>
   </section>
 
@@ -416,7 +416,7 @@
           <div class="option-fields">
             {#if selectedType === "time_poll"}
               <label>
-                Date and time
+                {@render Required("Date and time")}
                 <input type="datetime-local" required value={option.local || (mounted ? "" : option.label.slice(0, 16))} oninput={(event) => updateOption(index, { local: event.currentTarget.value, label: toIso(event.currentTarget.value) })} />
               </label>
               {#if mounted && option.label && !option.local}
@@ -424,7 +424,7 @@
               {/if}
             {:else}
               <label>
-                {selectedType === "irv" || selectedType === "stv" ? "Candidate" : "Label"}
+                {@render Required(selectedType === "irv" || selectedType === "stv" ? "Candidate" : "Label")}
                 <input value={option.label} required oninput={(event) => updateOption(index, { label: event.currentTarget.value })} />
               </label>
             {/if}
@@ -459,7 +459,7 @@
     {#if voterMode === "invite"}
       <div class="field">
         <label>
-          Invited voters
+          {@render Required("Invited voters")}
           <textarea name="inviteesText" id="inviteesText" rows="6" bind:value={inviteesText}></textarea>
         </label>
         <p class="field-help" id="invitees-hint">One name per line ({inviteeCount} invited so far; max 500). Duplicates are ignored, ignoring case. Personal links appear on the poll page once you save. You can add invitees after voting opens but not remove anyone.</p>
@@ -540,3 +540,8 @@
   </details>
 
 </form>
+
+<!-- One element (so it stays on one line inside grid labels); CSS draws the asterisk. -->
+{#snippet Required(text: string)}
+  <span class="required">{text}</span>
+{/snippet}

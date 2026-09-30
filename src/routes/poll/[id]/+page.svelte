@@ -16,6 +16,7 @@
   import type { PageProps } from "./$types";
   import { isProposalType, type Option, type Poll, type Vote } from "../../../types";
   import { pendingForm } from "$lib/enhance.svelte";
+  import { limitChoices } from "$lib/limitChoices";
   import { isClosed, isOpen, parseSlot, pollMeta, statusLabel } from "$lib/shared";
 
   let { data, form }: PageProps = $props();
@@ -117,6 +118,12 @@
     }
     return adminForm.enhance(input);
   };
+  function chooseRule(min: number, max: number): string {
+    if (min === max) return max === 1 ? "Choose one" : `Choose exactly ${max}`;
+    if (min <= 1) return max === 1 ? "Choose one" : `Choose up to ${max}${min === 1 ? "" : ", or none"}`;
+    return `Choose ${min} to ${max}`;
+  }
+
   function ballotObject(value: unknown): Record<string, unknown> {
     return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
   }
@@ -284,12 +291,12 @@
     {#if inviteBallot}
       <p>Voting as <strong>{viewerName || "your invited name"}</strong></p>
     {:else}
-      <label>Your display name <input name="voterName" required value={viewerName} /></label>
+      <label>{@render Required("Your display name")} <input name="voterName" required value={viewerName} /></label>
     {/if}
 
     {#if isProposalType(poll.type)}
       <fieldset>
-        <legend>Position</legend>
+        <legend>{@render Required("Position")}<span class="legend-hint">Choose one</span></legend>
         {#each options as option (option.id)}
           <label>
             <input type="radio" name="optionId" value={option.id} checked={Number(currentBallot.optionId ?? 0) === option.id} required />
@@ -298,8 +305,9 @@
         {/each}
       </fieldset>
     {:else if poll.type === "choose" || poll.type === "approval"}
-      <fieldset>
-        <legend>{poll.type === "approval" ? "Approve any options" : `Choose ${poll.config.minChoices ?? 1}-${poll.config.maxChoices ?? 1}`}</legend>
+      {@const max = poll.type === "choose" ? (poll.config.maxChoices ?? 1) : null}
+      <fieldset use:limitChoices={max !== null && max < options.length ? max : null}>
+        <legend>Options<span class="legend-hint">{poll.type === "approval" ? "Approve as many as you like" : chooseRule(poll.config.minChoices ?? 1, poll.config.maxChoices ?? 1)}</span></legend>
         {#each options as option (option.id)}
           <label>
             <input type="checkbox" name="selected" value={option.id} checked={currentSelected.has(option.id)} />
@@ -311,14 +319,14 @@
       {@const min = poll.config.scoreMin ?? 0}
       {@const max = poll.config.scoreMax ?? 5}
       <fieldset>
-        <legend>Score every option ({min}-{max})</legend>
+        <legend>{@render Required("Scores")}<span class="legend-hint">Score each option from {min} (worst) to {max} (best)</span></legend>
         {#each options as option (option.id)}
           <label class="inline-control">{option.label} <input type="number" name={`score_${option.id}`} min={min} max={max} value={String(currentScores[String(option.id)] ?? min)} required /></label>
         {/each}
       </fieldset>
     {:else if poll.type === "allocate"}
       <fieldset>
-        <legend>Allocate up to {poll.config.pointBudget ?? 8} points</legend>
+        <legend>Points<span class="legend-hint">Share up to {poll.config.pointBudget ?? 8} points across the options</span></legend>
         {#each options as option (option.id)}
           <label class="inline-control">{option.label} <input type="number" name={`allocation_${option.id}`} min="0" step="1" value={String(currentAllocations[String(option.id)] ?? 0)} /></label>
         {/each}
@@ -326,12 +334,12 @@
     {:else if poll.type === "rank" || poll.type === "irv" || poll.type === "stv"}
       {@const maxRanks = poll.type === "rank" ? (poll.config.rankCount ?? options.length) : options.length}
       <fieldset>
-        <legend>Rank options</legend>
+        <legend>{@render Required("Ranking")}<span class="legend-hint">{poll.type === "rank" ? `Rank up to ${maxRanks}, most preferred first` : "Rank as many as you like, most preferred first"}</span></legend>
         <RankBallot {options} {maxRanks} initial={currentRankings} limited={poll.type === "rank"} />
       </fieldset>
     {:else if poll.type === "time_poll"}
       <fieldset>
-        <legend>Availability</legend>
+        <legend>{@render Required("Availability")}<span class="legend-hint">Mark every slot</span></legend>
         {#each options as option (option.id)}
           {@const current = String(currentAvailability[String(option.id)] ?? "unavailable")}
           <div class="slot">
@@ -349,7 +357,7 @@
 
     {#if poll.config.reasonMode !== "disabled"}
       <label>
-        Reason {poll.config.reasonMode === "required" ? "(required)" : "(optional)"}
+        {#if poll.config.reasonMode === "required"}{@render Required("Reason")}{:else}<span>Reason <span class="label-hint">(optional)</span></span>{/if}
         <textarea name="reason" rows="3" required={poll.config.reasonMode === "required"}>{viewerVote?.reason ?? ""}</textarea>
       </label>
     {/if}
@@ -359,4 +367,9 @@
 
 {#snippet ChoiceText(option: Option)}
   <span>{option.label}{#if option.meaning}<span class="choice-meaning">{option.meaning}</span>{/if}</span>
+{/snippet}
+
+<!-- One element (so it stays on one line inside grid labels); CSS draws the asterisk. -->
+{#snippet Required(text: string)}
+  <span class="required">{text}</span>
 {/snippet}

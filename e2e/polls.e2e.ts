@@ -65,7 +65,10 @@ test("choose poll: draft, edit, open, vote, update, name clash, close, results, 
   await A.page.goto(`/poll/${slug}`);
   await expect(voteForm(A.page).getByLabel("Your display name")).toHaveValue("Ada");
   await expect(voteForm(A.page).getByLabel("Option A", { exact: true })).toBeChecked();
+  // Pick-one limit reached: the other options are greyed out until Option A is unticked.
+  await expect(voteForm(A.page).getByLabel("Option C", { exact: true })).toBeDisabled();
   await voteForm(A.page).getByLabel("Option A", { exact: true }).uncheck();
+  await expect(voteForm(A.page).getByLabel("Option C", { exact: true })).toBeEnabled();
   await voteForm(A.page).getByLabel("Option C", { exact: true }).check();
   await submitVote(A.page, "Update vote");
   await expect(voteForm(A.page).getByLabel("Option C", { exact: true })).toBeChecked();
