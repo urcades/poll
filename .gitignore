@@ -20,3 +20,6 @@ outputs/
 # Playwright
 test-results/
 playwright-report/
+
+# Scratch git worktrees used by coding agents
+.claude/worktrees/
