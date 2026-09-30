@@ -279,6 +279,7 @@
   {#if selectedType === "choose" || selectedType === "score" || selectedType === "allocate" || selectedType === "rank" || selectedType === "stv" || selectedType === "time_poll"}
     <section id="type-settings">
       <h2>Voting rules</h2>
+      <div class="compact-fields">
       {#if selectedType === "choose"}
         <label>Minimum choices <input type="number" name="minChoices" min="0" max={Math.max(0, optionCount)} bind:value={minChoices} /></label>
         <label>Maximum choices <input type="number" name="maxChoices" min="1" max={Math.max(1, optionCount)} bind:value={maxChoices} /></label>
@@ -308,6 +309,7 @@
       {:else if selectedType === "time_poll"}
         <label>Meeting duration (minutes) <input type="number" name="meetingDurationMinutes" min="1" bind:value={meetingDurationMinutes} /></label>
       {/if}
+      </div>
     </section>
   {/if}
 

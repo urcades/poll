@@ -357,6 +357,28 @@ label.inline-control {
   gap: var(--space-3);
 }
 
+/* Small settings (counts, scores, short menus) sit side by side, each
+   input only as wide as the values it holds. */
+.compact-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-5);
+  align-items: end;
+}
+
+.compact-fields > label {
+  justify-items: start;
+}
+
+/* (Specific enough to beat the general full-width input rule below.) */
+.compact-fields input[type="number"]:not([type="checkbox"]) {
+  width: 5em;
+}
+
+.compact-fields select:not([multiple]) {
+  width: auto;
+}
+
 /* Label | input | button rows that share one set of columns. */
 .field-grid {
   display: grid;
