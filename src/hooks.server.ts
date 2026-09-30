@@ -1,8 +1,7 @@
 import type { Handle } from "@sveltejs/kit";
-import { createLimiters, enforceRateLimit, loadRateLimitConfig } from "./lib/server/ratelimit";
+import { appRateLimits, enforceRateLimit } from "./lib/server/ratelimit";
 
-const config = loadRateLimitConfig(process.env);
-const limiters = createLimiters(config);
+const { config, limiters } = appRateLimits();
 
 export function applySecurityHeaders(response: Response, isHttps: boolean): Response {
   const defaults: Record<string, string> = {

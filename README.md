@@ -25,6 +25,34 @@ This project started as a local exploration of Loomio-style poll creation and la
 - Link previews: poll pages, the results page and the home page carry Open Graph and Twitter card tags (title, a shortened description or "<type> - <status>", the clean `/poll/<slug>` URL from the request origin, and a generic `static/og.png` 1200x630 image). Tags are built from public poll fields only, never admin or invite tokens or voter data. Poll pages also send `<meta name="robots" content="noindex">` since polls are private by link. Behind a proxy, make sure `ORIGIN` (or the forwarded host headers your adapter trusts) reflect the public URL so absolute links are right.
 - A SvelteKit frontend styled with `@flowercomputer/flowerparts`.
 
+## Agent Interface (MCP)
+
+Everything a person can do in the web pages, an agent can do over the [Model Context Protocol](https://modelcontextprotocol.io) at `/mcp` (Streamable HTTP, JSON responses, no SSE stream). Point any MCP client at the app's URL, for example with Claude Code:
+
+```bash
+claude mcp add --transport http poll https://your-poll-host/mcp
+```
+
+Tools:
+
+| Tool | What it does | Who |
+| --- | --- | --- |
+| `list_poll_types` | Every decision method, when to use it, how results work, defaults | anyone |
+| `create_poll` | New draft (or `open: true` to open or schedule it at once); returns the `adminToken`, links and invitee links | anyone |
+| `get_poll` | The poll as a participant sees it: options with ids, a `howToVote` summary with an example ballot, your vote, whether you can vote, visible results, admin extras | anyone with the id or link |
+| `cast_vote` | Vote or re-vote with one friendly field per method (`choice`, `selected`, `scores`, `allocations`, `ranking`, `availability`); options by label or id; returns a `voteToken` | voters / invitees |
+| `get_results` | The tally, following the poll's visibility rules | anyone allowed to see it |
+| `list_my_polls` | Polls this session created, voted in or was invited to (everything for the operator) | session |
+| `update_draft` | Partial edit of a draft (only the fields passed change) | admin |
+| `open_poll`, `schedule_poll`, `unschedule_poll`, `close_poll` | Lifecycle; `schedule_poll` can set `opensAt` in the same call | admin |
+| `add_invitees` | Invite more people; returns their personal links | admin |
+| `duplicate_poll`, `delete_poll` | Copy into a new draft; permanent delete | admin |
+| `export_results` | The JSON export for a closed poll, with ballots named by option label | admin |
+
+Access works the same as in a browser. Each MCP session gets an in-memory stand-in for a browser's capability cookies: the session that creates a poll is its admin, a session that votes can update its own ballot, and opening an admin or invite link (passed as `poll`) grants that access for the session. Tokens are also returned (`adminToken`, `voteToken`) and accepted as arguments (`adminToken`, `inviteToken`, `voteToken`), so an agent can act across sessions and after server restarts, which forget every session. Sessions expire after 24 hours idle. Requests without a session id work too, statelessly, with explicit tokens. The operator can connect with `Authorization: Bearer <OPERATOR_TOKEN>`. The endpoint never reads browser cookies.
+
+Every tool runs the same server functions as the pages and JSON API (`src/lib/server/app.ts`): votes go through the same parsing and validation, and invite-only mode, final votes, hidden results, anonymous mode and admin checks all apply unchanged. Rate limits apply per tool call rather than per HTTP request: `create_poll` and `duplicate_poll` count against the creation limit, other changes against the general one, and reads are free. Problems an agent can fix (a missing reason, an unknown option, a closed poll) come back as tool errors with a plain explanation. The server's `instructions` explain the lifecycle and access model to the connecting agent and tell it to treat poll text and voter reasons as content rather than instructions.
+
 ## Poll Types
 
 The app currently supports these vote and proposal shapes:
@@ -207,6 +235,7 @@ Anonymous voting mode hides voter names and reasons in results and exports, but 
 - `src/db.ts`: SQLite-backed store and migrations.
 - `src/tally.ts`: vote validation and tally algorithms.
 - `src/templates.ts`: poll type metadata, examples, defaults (time polls generate upcoming slots), and external references.
+- `src/lib/server/mcp/`: the MCP server (`server.ts`: protocol and sessions; `tools.ts`: the tools; `parity.ts`: which tool covers each web route and action), served by `src/routes/mcp/+server.ts`. `tests/mcp-parity.test.ts` fails when a web capability has no MCP counterpart; `AGENTS.md` and `.claude/skills/mcp-parity/` explain how to add one.
 - `src/lib/ics.ts`: iCalendar writer (escaping, line folding) used by the `.ics` route.
 - `static/og.png`: the generic link-preview image.
 - `tests/`: deterministic tally and route-level integration tests.

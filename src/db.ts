@@ -600,6 +600,13 @@ export class Store {
     return rows.some((row) => tokenMatches(row.edit_token_hash, token));
   }
 
+  /** The voter name on the ballot whose edit token this is, or null. */
+  voterNameForToken(pollId: number, token: string): string | null {
+    if (!token) return null;
+    const rows = this.db.query("SELECT voter_name, edit_token_hash FROM votes WHERE poll_id = ? AND edit_token_hash != ''").all(pollId) as Array<{ voter_name: string; edit_token_hash: string }>;
+    return rows.find((row) => tokenMatches(row.edit_token_hash, token))?.voter_name ?? null;
+  }
+
   /** Draft -> scheduled. The caller has checked `opens_at` is set, in the future, and before `closes_at`. */
   schedulePoll(pollId: number): boolean {
     const result = this.db.query("UPDATE polls SET status = 'scheduled' WHERE id = ? AND status = 'draft' AND opens_at IS NOT NULL").run(pollId);

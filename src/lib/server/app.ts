@@ -95,12 +95,13 @@ function limitedField(value: unknown, label: string, max: number): string {
   return text;
 }
 
-export function inputFromData(data: Record<string, unknown>): CreatePollInput {
+/** `options` may be given already split (the MCP tools do); otherwise they are read from `optionsText`, one `label | meaning` per line. */
+export function inputFromData(data: Record<string, unknown>, parsedOptions?: Array<{ label: string; meaning: string }>): CreatePollInput {
   const type = parseType(data.type);
   if (!type) throw new Error("Invalid poll type.");
   const title = limitedField(data.title, "Title", LIMITS.title).trim();
   if (!title) throw new Error("Title is required.");
-  const options = parseOptions(stringField(data.optionsText));
+  const options = parsedOptions ? checkOptions(parsedOptions.map((option) => ({ label: option.label.trim(), meaning: option.meaning.trim() })).filter((option) => option.label)) : parseOptions(stringField(data.optionsText));
   const config = parseConfig(type, data);
   if (type === "time_poll") normalizeTimeOptions(options);
   validatePollSetup(type, config, options);
@@ -140,7 +141,10 @@ export function parseInvitees(text: string): string[] {
 
 /** `forcedName` (invite mode) replaces whatever name the request carries. */
 export async function voteInputFromRequest(request: Request, poll: Poll, options: Option[], forcedName?: string) {
-  const data = await readData(request);
+  return voteInputFromData(await readData(request), poll, options, forcedName);
+}
+
+export function voteInputFromData(data: Record<string, unknown>, poll: Poll, options: Option[], forcedName?: string) {
   const voterName = forcedName ?? limitedField(data.voterName, "Display name", LIMITS.voterName).trim();
   if (!voterName) throw new Error("Display name is required.");
   const reason = poll.config.reasonMode === "disabled" ? "" : limitedField(data.reason, "Reason", LIMITS.reason).trim();
@@ -359,9 +363,14 @@ export function grantInviteFromUrl(cookies: Cookies, poll: Poll, urlToken: strin
  * re-voting from the same invite updates the ballot.
  */
 export async function submitVote(poll: Poll, options: Option[], request: Request, cookies: Cookies) {
+  submitVoteData(poll, options, await readData(request), cookies);
+}
+
+/** `submitVote` for already-parsed form-shaped data (`voterName`, `reason`, `optionId`, `score_<id>`, ...). */
+export function submitVoteData(poll: Poll, options: Option[], data: Record<string, unknown>, cookies: Cookies) {
   const invite = poll.config.voterMode === "invite" ? currentInvite(cookies, poll) : null;
   if (poll.config.voterMode === "invite" && !invite) throw new InviteRequiredError();
-  const vote = await voteInputFromRequest(request, poll, options, invite?.name);
+  const vote = voteInputFromData(data, poll, options, invite?.name);
   // Final votes: once this browser has a ballot in the poll, it can't cast
   // another under any name, unless the poll allows changes or it's the admin.
   const token = invite?.token || voteTokenFor(cookies, poll.id);
@@ -664,6 +673,10 @@ function parseOptions(text: string): Array<{ label: string; meaning: string }> {
       return { label: (label ?? "").trim(), meaning: meaning.join("|").trim() };
     })
     .filter((option) => option.label);
+  return checkOptions(options);
+}
+
+function checkOptions(options: Array<{ label: string; meaning: string }>): Array<{ label: string; meaning: string }> {
   if (options.length > LIMITS.optionCount) throw new Error(`Too many options (max ${LIMITS.optionCount}).`);
   for (const option of options) {
     if (option.label.length > LIMITS.optionLabel) throw new Error(`Option labels are too long (max ${LIMITS.optionLabel} characters).`);

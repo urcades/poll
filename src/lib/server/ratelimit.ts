@@ -96,6 +96,8 @@ export function classifyRequest(method: string, pathname: string, search = ""): 
   const m = method.toUpperCase();
   if (m === "GET" || m === "HEAD" || m === "OPTIONS") return null;
   const path = pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname;
+  // MCP requests are limited per tool call by the MCP handler itself (reads are free, creations use "create").
+  if (path === "/mcp") return null;
   if (path === "/api/polls" || path === "/new") return "create";
   // Duplicating mints a new poll, so it shares the creation budget.
   if (/^\/api\/polls\/[^/]+\/duplicate$/.test(path) || (/^\/poll\/[^/]+$/.test(path) && search === "?/duplicate")) return "create";
@@ -142,4 +144,15 @@ export function enforceRateLimit(
   if (!bucket) return null;
   const result = limiters[bucket].check(clientIp);
   return result.allowed ? null : tooManyRequests(request, result.retryAfter);
+}
+
+let shared: { config: RateLimitConfig; limiters: Record<Bucket, RateLimiter> } | null = null;
+
+/** The process-wide limiters, shared by the request hook and the MCP handler. */
+export function appRateLimits(): { config: RateLimitConfig; limiters: Record<Bucket, RateLimiter> } {
+  if (!shared) {
+    const config = loadRateLimitConfig(process.env);
+    shared = { config, limiters: createLimiters(config) };
+  }
+  return shared;
 }
