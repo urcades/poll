@@ -69,7 +69,7 @@
     grid-area: end;
     justify-self: end;
     display: flex;
-    gap: var(--space-2);
+    gap: var(--gap-inline);
     align-items: center;
   }
 
@@ -85,7 +85,7 @@
 
   .header-actions {
     display: none;
-    gap: var(--space-2);
+    gap: var(--gap-inline);
     align-items: center;
   }
 

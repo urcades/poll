@@ -56,6 +56,8 @@ body {
   --space-4: 1em;
   --space-5: 1.5em;
   --space-6: 3em;
+  /* The one gap between controls sitting side by side (buttons, fields). */
+  --gap-inline: var(--space-1);
   --content-width: 66ch;
 
   margin: 0;
@@ -257,7 +259,7 @@ fieldset,
 .section-head {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
+  gap: var(--space-2) var(--gap-inline);
   align-items: center;
   justify-content: space-between;
 }
@@ -389,7 +391,7 @@ label.inline-control {
 .field-grid {
   display: grid;
   grid-template-columns: 7em minmax(0, 1fr) max-content;
-  gap: var(--space-2) var(--space-3);
+  gap: var(--space-2) var(--gap-inline);
   align-items: center;
 }
 
@@ -578,19 +580,12 @@ details[open] > summary {
 .actions {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
+  gap: var(--gap-inline);
   align-items: center;
 }
 
 .actions form {
   display: contents;
-}
-
-.row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  align-items: center;
 }
 
 .poll-list,
@@ -717,7 +712,7 @@ table.round-log {
 .option-block {
   display: grid;
   grid-template-columns: auto 1fr auto;
-  gap: var(--space-3);
+  gap: var(--gap-inline);
   align-items: center;
   padding: var(--space-3) var(--space-4);
 }
@@ -759,14 +754,14 @@ table.round-log {
 .option-fields {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
-  gap: var(--space-2);
+  gap: var(--gap-inline);
 }
 
 /* Bottom-aligned with the inputs (the drag handle stays centered). */
 .option-actions {
   align-self: end;
   display: flex;
-  gap: var(--space-1);
+  gap: var(--gap-inline);
   flex-wrap: wrap;
   justify-content: end;
 }
