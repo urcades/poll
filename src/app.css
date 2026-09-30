@@ -106,7 +106,30 @@ body > div > :not(.page-header, .header-scrim) + * {
 
 /* Sections get the site's generous 3em lead-in above their heading. */
 body > div > :not(.page-header, .header-scrim) + :is(section, form) {
-  margin-top: var(--space-6);
+  margin-top: var(--space-5);
+}
+
+/* Each major section of a page (and of the poll editor) sits in its own
+   outlined card. An outline rather than a fill, so the tinted inputs and
+   option cards inside keep their contrast. The poll's title block stays
+   open as the page heading; Manage poll keeps its dotted callout outline. */
+body > div > section:not(.poll-intro, .callout),
+form:has(> section) > :is(section, .form-details) {
+  padding: var(--space-5);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-card);
+}
+
+body > div > section.callout {
+  gap: var(--space-4);
+  padding: var(--space-5);
+}
+
+@media (max-width: 640px) {
+  body > div > section:not(.poll-intro),
+  form:has(> section) > :is(section, .form-details) {
+    padding: var(--space-4);
+  }
 }
 
 /* Fades content out under the sticky header once the page scrolls. */
@@ -242,7 +265,7 @@ form {
 
 /* A form made of sections (the poll editor) keeps the page's section rhythm. */
 form:has(> section) {
-  gap: var(--space-6);
+  gap: var(--space-5);
 }
 
 fieldset,
@@ -1158,6 +1181,8 @@ table.round-log {
 
 /* The site's rounder, squircle corners where the browser supports them. */
 @supports (corner-shape: superellipse(2)) {
+  body > div > section:not(.poll-intro, .callout),
+  form:has(> section) > :is(section, .form-details),
   .card,
   .option-block,
   .fixed-positions,
