@@ -138,6 +138,14 @@ export function voteForm(page: Page): Locator {
   return page.locator("form[action='?/vote']");
 }
 
+/**
+ * After voting: admins (and polls that allow changes) get "Update vote";
+ * everyone else sees their ballot locked with "Your vote is in".
+ */
+export async function expectVoted(page: Page) {
+  await expect(page.getByText("Your vote is in").or(page.getByRole("button", { name: "Update vote" })).first()).toBeVisible();
+}
+
 /** The vote button is the page's primary action, in the header. */
 export async function submitVote(page: Page, button: "Submit vote" | "Update vote" = "Submit vote") {
   await page.getByRole("button", { name: button, exact: true }).click();

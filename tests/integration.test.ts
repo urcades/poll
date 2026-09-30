@@ -231,15 +231,97 @@ describe("SvelteKit app integration", () => {
     expect((votes[0]!.ballot as { selected: number[] }).selected).toEqual([options[1]!.id]);
   });
 
+  describe("final votes", () => {
+    test("new polls default to results after voting and final votes", async () => {
+      const db = storeFixture();
+      const { id } = await createPoll();
+      const config = db.getPollBySlug(id)!.config;
+      expect(config.hideResults).toBe("after_vote");
+      expect(config.allowVoteChanges).toBe(false);
+    });
+
+    test("a voter cannot change or recast their vote, under any name", async () => {
+      const db = storeFixture();
+      const { id } = await createPoll();
+      await openPoll(id);
+      const options = db.getOptions(pid(db, id));
+      const voter = cookieJar();
+      expect((await postJson(voteRoute, { id }, { voterName: "Ada", selected: [String(options[0]!.id)] }, voter)).status).toBe(200);
+      expect((await loadPoll(id, voter)).canChangeVote).toBe(false);
+
+      for (const voterName of ["Ada", "Ada2"]) {
+        const again = await postJson(voteRoute, { id }, { voterName, selected: [String(options[1]!.id)] }, voter);
+        expect(again.status).toBe(400);
+        expect(((await again.json()) as { error: string }).error).toContain("can't be changed");
+      }
+      const votes = db.getVotes(pid(db, id));
+      expect(votes).toHaveLength(1);
+      expect((votes[0]!.ballot as { selected: number[] }).selected).toEqual([options[0]!.id]);
+
+      // The form action refuses too.
+      const form = await pollActions.vote({
+        params: { id },
+        request: new Request("http://local.test", {
+          method: "POST",
+          headers: { "content-type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ voterName: "Ada", selected: String(options[1]!.id) })
+        }),
+        cookies: voter
+      } as never);
+      expect(form).toMatchObject({ status: 400 });
+    });
+
+    test("the poll's admin can still update their own vote", async () => {
+      const db = storeFixture();
+      const { id } = await createPoll();
+      await openPoll(id);
+      const options = db.getOptions(pid(db, id));
+      expect((await postJson(voteRoute, { id }, { voterName: "Host", selected: [String(options[0]!.id)] })).status).toBe(200);
+      expect((await loadPoll(id)).canChangeVote).toBe(true);
+      expect((await postJson(voteRoute, { id }, { voterName: "Host", selected: [String(options[2]!.id)] })).status).toBe(200);
+      expect((db.getVotes(pid(db, id))[0]!.ballot as { selected: number[] }).selected).toEqual([options[2]!.id]);
+    });
+
+    test("allowVoteChanges lets voters update their ballot", async () => {
+      const db = storeFixture();
+      const { id } = await createPoll({ allowVoteChanges: true });
+      await openPoll(id);
+      const options = db.getOptions(pid(db, id));
+      const voter = cookieJar();
+      await postJson(voteRoute, { id }, { voterName: "Ada", selected: [String(options[0]!.id)] }, voter);
+      expect((await loadPoll(id, voter)).canChangeVote).toBe(true);
+      expect((await postJson(voteRoute, { id }, { voterName: "Ada", selected: [String(options[1]!.id)] }, voter)).status).toBe(200);
+      expect((db.getVotes(pid(db, id))[0]!.ballot as { selected: number[] }).selected).toEqual([options[1]!.id]);
+    });
+
+    test("migration 5 keeps vote changes allowed on polls created before final votes", async () => {
+      const dir = mkdtempSync(join(tmpdir(), "loomio-lite-"));
+      cleanupPaths.push(dir);
+      const path = join(dir, "old.sqlite");
+      store = resetStoreForTesting(path);
+      const { id } = await createPoll();
+      store.close();
+      const raw = new Database(path);
+      raw.exec("UPDATE polls SET config_json = json_remove(config_json, '$.allowVoteChanges'); PRAGMA user_version = 4;");
+      raw.close();
+      store = resetStoreForTesting(path);
+      expect(store.getPollBySlug(id)!.config.allowVoteChanges).toBe(true);
+      expect((store.db.query("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(5);
+    });
+  });
+
   test("hide-results behavior before vote, after vote, and after close", async () => {
     const db = storeFixture();
     const { id } = await createPoll({ hideResults: "after_vote" });
     await openPoll(id);
-    expect((await loadPoll(id)).showResults).toBe(false);
+    // The poll's admin follows the results from the start; a voter waits until they've voted.
+    expect((await loadPoll(id)).showResults).toBe(true);
+    const voter = cookieJar();
+    expect((await loadPoll(id, voter)).showResults).toBe(false);
 
     const options = db.getOptions(pid(db, id));
-    await postJson(voteRoute, { id: String(id) }, { voterName: "Ada", selected: [String(options[0]!.id)] });
-    expect((await loadPoll(id)).showResults).toBe(true);
+    await postJson(voteRoute, { id: String(id) }, { voterName: "Ada", selected: [String(options[0]!.id)] }, voter);
+    expect((await loadPoll(id, voter)).showResults).toBe(true);
 
     // Someone who merely guesses a voter's name (no edit-token cookie) gets nothing.
     const stranger = cookieJar();
@@ -312,7 +394,7 @@ describe("SvelteKit app integration", () => {
 
   test("a different browser cannot replace an existing vote by reusing the name", async () => {
     const db = storeFixture();
-    const { id } = await createPoll();
+    const { id } = await createPoll({ allowVoteChanges: true });
     await openPoll(id);
     const options = db.getOptions(pid(db, id));
     const ada = cookieJar();
@@ -901,7 +983,7 @@ describe("SvelteKit app integration", () => {
 
     test("the invite decides the voter name; a submitted name is ignored; re-voting updates the ballot", async () => {
       const db = storeFixture();
-      const { id } = await createInvitePoll({ hideResults: "after_vote" });
+      const { id } = await createInvitePoll({ hideResults: "after_vote", allowVoteChanges: true });
       await openPoll(id);
       const internal = pid(db, id);
       const options = db.getOptions(internal);
@@ -1133,7 +1215,7 @@ describe("SvelteKit app integration", () => {
 
       const migrated = new StoreClass(path);
       store = migrated;
-      expect((migrated.db.query("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(4);
+      expect((migrated.db.query("PRAGMA user_version").get() as { user_version: number }).user_version).toBeGreaterThanOrEqual(4);
       expect(migrated.listPolls()).toHaveLength(1);
       expect(migrated.getPoll(1)?.config.voterMode).toBe("open");
       migrated.replaceInvitees(1, ["Ada"], "tok");

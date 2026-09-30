@@ -54,13 +54,25 @@ export function publicTally(tally: TallyResult): PublicTallyResult {
     : rest;
 }
 
-export function canShowResults(poll: Poll, viewerVote: Vote | null): boolean {
+/**
+ * "after_vote" shows results once this browser has voted; the poll's admin sees
+ * them regardless, to follow their own poll. "after_close" hides them from
+ * everyone until the poll closes.
+ */
+export function canShowResults(poll: Poll, viewerVote: Vote | null, isAdmin = false): boolean {
   if (poll.status === "draft" || poll.status === "scheduled") return false;
   if (isClosed(poll)) return true;
   if (poll.config.hideResults === "off") return true;
-  if (poll.config.hideResults === "after_vote") return Boolean(viewerVote);
+  if (poll.config.hideResults === "after_vote") return Boolean(viewerVote) || isAdmin;
   return false;
 }
+
+/** Whether this viewer may cast (or recast) a ballot: once cast, a vote is final unless the poll allows changes or the viewer is its admin. */
+export function canChangeVote(poll: Poll, viewerVote: Vote | null, isAdmin: boolean): boolean {
+  return !viewerVote || poll.config.allowVoteChanges || isAdmin;
+}
+
+export const VOTE_LOCKED_MESSAGE = "Your vote is already in. Votes on this poll can't be changed once cast.";
 
 export async function inputFromRequest(request: Request): Promise<CreatePollInput> {
   const data = await readData(request);
@@ -350,6 +362,12 @@ export async function submitVote(poll: Poll, options: Option[], request: Request
   const invite = poll.config.voterMode === "invite" ? currentInvite(cookies, poll) : null;
   if (poll.config.voterMode === "invite" && !invite) throw new InviteRequiredError();
   const vote = await voteInputFromRequest(request, poll, options, invite?.name);
+  // Final votes: once this browser has a ballot in the poll, it can't cast
+  // another under any name, unless the poll allows changes or it's the admin.
+  const token = invite?.token || voteTokenFor(cookies, poll.id);
+  if (!poll.config.allowVoteChanges && token && getStore().hasVoteToken(poll.id, token) && !isPollAdmin(cookies, poll.id)) {
+    throw new Error(VOTE_LOCKED_MESSAGE);
+  }
   recordVote(poll, vote, cookies, invite?.token);
 }
 
@@ -597,6 +615,7 @@ function parseConfig(type: PollType, data: Record<string, unknown>): PollConfig 
   const config = { ...defaultConfigFor(type) };
   config.anonymous = boolField(data.anonymous);
   config.voterMode = stringField(data.voterMode) === "invite" ? "invite" : "open";
+  config.allowVoteChanges = boolField(data.allowVoteChanges);
   config.hideResults = ["off", "after_vote", "after_close"].includes(stringField(data.hideResults)) ? stringField(data.hideResults) as PollConfig["hideResults"] : baseConfig.hideResults;
   config.reasonMode = ["optional", "required", "disabled"].includes(stringField(data.reasonMode)) ? stringField(data.reasonMode) as PollConfig["reasonMode"] : baseConfig.reasonMode;
   config.quorumPercent = intField(data.quorumPercent, 0, 0, 100);

@@ -18,12 +18,15 @@
 
 <MetaTags {meta} noindex />
 
-<AppPageHeader title={data.poll.title} backHref={resolve("/poll/[id]", { id: data.poll.slug })} backLabel="Back to poll" />
+<AppPageHeader backHref={resolve("/poll/[id]", { id: data.poll.slug })} backLabel="Back to poll" />
 
-<p class="lede">{labelForPoll(data.poll)} · {statusLabel(data.poll)} · {data.voteCount} vote{data.voteCount === 1 ? "" : "s"}{data.poll.config.anonymous ? " · anonymous" : ""}</p>
-{#if !isClosed(data.poll)}
-  <p class="hint">Voting is still open, so these results can change.</p>
-{/if}
+<section class="poll-intro">
+  <h1>{data.poll.title}</h1>
+  <p class="lede">{labelForPoll(data.poll)} · {statusLabel(data.poll)} · {data.voteCount} vote{data.voteCount === 1 ? "" : "s"}{data.poll.config.anonymous ? " · anonymous" : ""}</p>
+  {#if !isClosed(data.poll)}
+    <p class="hint">Voting is still open, so these results can change.</p>
+  {/if}
+</section>
 
 <section>
   <h2>Results</h2>

@@ -36,6 +36,8 @@ export interface PollConfig {
   /** "open": anyone with the link votes under a name they type. "invite": only named invitees, via personal links. */
   voterMode: VoterMode;
   hideResults: HideResults;
+  /** Whether voters (other than the poll's admin) may change a ballot after casting it. */
+  allowVoteChanges: boolean;
   reasonMode: ReasonMode;
   quorumPercent: number;
   eligibleVoterCount: number;

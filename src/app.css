@@ -531,6 +531,23 @@ details[open] > summary {
   margin-inline-start: 0;
 }
 
+/* ---------- Poll pages ---------- */
+
+/* Title, status line, and description, read as one block. */
+.poll-intro {
+  gap: var(--space-2);
+}
+
+.poll-intro h1 {
+  color: var(--fg);
+}
+
+.poll-details {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
 /* ---------- Surfaces ---------- */
 
 /* Tinted, grained cards, like the site's asides. */

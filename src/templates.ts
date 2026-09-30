@@ -35,7 +35,9 @@ export function defaultTimeSlots(now = new Date()): Array<{ label: string }> {
 export const baseConfig: PollConfig = {
   anonymous: false,
   voterMode: "open",
-  hideResults: "off",
+  // Opinionated defaults: results appear once you've voted, and a cast vote is final.
+  hideResults: "after_vote",
+  allowVoteChanges: false,
   reasonMode: "optional",
   quorumPercent: 0,
   eligibleVoterCount: 0,

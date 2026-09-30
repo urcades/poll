@@ -1,5 +1,5 @@
 import { error } from "@sveltejs/kit";
-import { canShowResults, getStore, publicTally, tallyFor, viewerContext } from "$lib/server/app";
+import { canShowResults, getStore, isPollAdmin, publicTally, tallyFor, viewerContext } from "$lib/server/app";
 import type { PageServerLoad } from "./$types";
 
 /**
@@ -11,7 +11,7 @@ export const load = (({ params, cookies }) => {
   if (!poll) error(404, "Poll not found.");
   if (poll.status === "draft" || poll.status === "scheduled") error(404, "This poll has no results yet.");
   const votes = getStore().getVotes(poll.id);
-  const showResults = canShowResults(poll, viewerContext(poll, cookies).viewerVote);
+  const showResults = canShowResults(poll, viewerContext(poll, cookies).viewerVote, isPollAdmin(cookies, poll.id));
   return {
     poll,
     voteCount: votes.length,

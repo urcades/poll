@@ -313,6 +313,18 @@ const MIGRATIONS: Migration[] = [
         );
       `);
     }
+  },
+  {
+    // Votes became final by default (allowVoteChanges: false). Polls created
+    // before that keep the behaviour they were created with: changes allowed.
+    version: 5,
+    up(db) {
+      db.exec(`
+        UPDATE polls
+        SET config_json = json_set(config_json, '$.allowVoteChanges', json('true'))
+        WHERE json_extract(config_json, '$.allowVoteChanges') IS NULL;
+      `);
+    }
   }
 ];
 

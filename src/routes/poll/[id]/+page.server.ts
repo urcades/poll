@@ -1,5 +1,5 @@
 import { error, fail, redirect } from "@sveltejs/kit";
-import { addInviteesOrThrow, adminCookieToken, ballotOptionsFor, canShowResults, closePollOrThrow, deletePollOrThrow, duplicatePollOrThrow, getStore, grantAdminFromUrl, grantInviteFromUrl, InviteRequiredError, invitationsFor, isPollAdmin, openPollOrThrow, publicTally, schedulePollOrThrow, submitVote, tallyFor, unschedulePollOrThrow, viewerContext } from "$lib/server/app";
+import { addInviteesOrThrow, adminCookieToken, ballotOptionsFor, canChangeVote, canShowResults, closePollOrThrow, deletePollOrThrow, duplicatePollOrThrow, getStore, grantAdminFromUrl, grantInviteFromUrl, InviteRequiredError, invitationsFor, isPollAdmin, openPollOrThrow, publicTally, schedulePollOrThrow, submitVote, tallyFor, unschedulePollOrThrow, viewerContext } from "$lib/server/app";
 import { isOpen } from "$lib/shared";
 import type { Actions, PageServerLoad } from "./$types";
 
@@ -20,7 +20,7 @@ export const load = (({ params, url, cookies }) => {
   // In invite mode the viewer is whoever their invite cookie says, and the
   // invite token is the ballot's edit token.
   const { inviteMode, invite, viewerName, viewerVote } = viewerContext(poll, cookies);
-  const showResults = canShowResults(poll, viewerVote);
+  const showResults = canShowResults(poll, viewerVote, isAdmin);
   // A scheduled poll shows visitors only when it opens; its ballot is for the admin's preview.
   const hideBallot = poll.status === "scheduled" && !isAdmin;
   return {
@@ -31,6 +31,8 @@ export const load = (({ params, url, cookies }) => {
     voteCount: votes.length,
     viewerName,
     viewerVote,
+    /** False once this viewer has voted, unless the poll allows changes or they are its admin. */
+    canChangeVote: canChangeVote(poll, viewerVote, isAdmin),
     // Hidden results must not reach the client at all; the UI toggle alone
     // would still leak them through the serialized page data.
     tally: showResults ? publicTally(tallyFor(poll, options, votes)) : null,

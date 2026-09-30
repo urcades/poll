@@ -34,7 +34,7 @@
   const primary = $derived.by((): Primary | null => {
     const poll = data.poll;
     if (poll.status === "draft" && data.isAdmin) return { label: "Open voting", form: "open-poll", pending: adminForm.pending };
-    if (canVote) return { label: data.viewerVote ? "Update vote" : "Submit vote", form: "vote-form", pending: voteForm.pending };
+    if (canVote && data.canChangeVote) return { label: data.viewerVote ? "Update vote" : "Submit vote", form: "vote-form", pending: voteForm.pending };
     if (data.isAdmin && poll.status === "open" && !isClosed(poll)) return { label: "Close poll", form: "close-poll", pending: adminForm.pending };
     if (isClosed(poll) && data.showResults) return { label: "Share results", href: resolve("/poll/[id]/results", { id: poll.slug }) };
     return null;
@@ -128,7 +128,7 @@
 
 <MetaTags {meta} noindex />
 
-<AppPageHeader title={data.poll.title} backHref={resolve("/")} backLabel="Back to home" {primary} actions={data.isAdmin ? PollActions : undefined} />
+<AppPageHeader backHref={resolve("/")} backLabel="Back to home" {primary} actions={data.isAdmin ? PollActions : undefined} />
 
 {#if data.isAdmin}
   <!-- Targets of the header's primary button (form="…"); they hold no fields. -->
@@ -140,10 +140,21 @@
   <p role="alert">{form.error}</p>
 {/if}
 
-<p class="lede">{template?.label ?? data.poll.type} · {statusLabel(data.poll)} · {data.voteCount} vote{data.voteCount === 1 ? "" : "s"}</p>
+<!-- The poll's title lives here, in full, rather than in the header where long titles were cut off. -->
+<section class="poll-intro">
+  <h1>{data.poll.title}</h1>
+  <p class="lede">{template?.label ?? data.poll.type} · {statusLabel(data.poll)} · {data.voteCount} vote{data.voteCount === 1 ? "" : "s"}</p>
+  {#if data.poll.details}
+    <div class="poll-details">
+      {#each data.poll.details.split("\n") as line, index (index)}
+        <p>{line}</p>
+      {/each}
+    </div>
+  {/if}
+</section>
 
 {#if data.isAdmin && (data.adminLink || isClosed(data.poll))}
-  <section>
+  <section class="callout">
     <h2>Manage poll</h2>
     {#if isClosed(data.poll)}
       <p>
@@ -158,15 +169,6 @@
         <p class="hint">Opening this link grants poll admin (open, close, edit, export) on another device. Keep it private; the plain poll URL is the one to share with voters.</p>
       </div>
     {/if}
-  </section>
-{/if}
-
-{#if data.poll.details}
-  <section>
-    <h2>Details</h2>
-    {#each data.poll.details.split("\n") as line, index (index)}
-      <p>{line}</p>
-    {/each}
   </section>
 {/if}
 
@@ -200,8 +202,14 @@
     {#if isOpen(data.poll)}
       {#if data.inviteRequired}
         <p>This poll is invite-only. Use the personal link you were sent.</p>
-      {:else}
+      {:else if data.canChangeVote}
         {@render VoteForm({ poll: data.poll, options: data.ballotOptions, viewerName: data.viewerName, viewerVote: data.viewerVote, inviteBallot: data.poll.config.voterMode === "invite", id: "vote-form" })}
+      {:else}
+        <!-- A cast vote is final here: show the ballot read-only. -->
+        <p>Your vote is in{data.viewerName ? `, ${data.viewerName}` : ""}. Votes on this poll can't be changed once cast.</p>
+        <div inert aria-disabled="true">
+          {@render VoteForm({ poll: data.poll, options: data.ballotOptions, viewerName: data.viewerName, viewerVote: data.viewerVote, inviteBallot: data.poll.config.voterMode === "invite" })}
+        </div>
       {/if}
     {:else}
       <p>Voting is not open.</p>

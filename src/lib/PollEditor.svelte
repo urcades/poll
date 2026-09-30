@@ -498,8 +498,13 @@
           <label><input type="radio" name="hideResults" value="after_vote" checked={values.config.hideResults === "after_vote"} /> Until vote is cast</label>
           <label><input type="radio" name="hideResults" value="after_close" checked={values.config.hideResults === "after_close"} /> Until poll is closed</label>
         </div>
-        <p class="field-help">Controls when voters can see the current tally: immediately, only after they vote, or only after the poll closes.</p>
+        <p class="field-help">Controls when voters can see the current tally: immediately, only after they vote, or only after the poll closes. You, as the poll's admin, can always see it once voting opens, unless it's hidden until the poll closes.</p>
       </fieldset>
+
+      <div class="field">
+        <label><input type="checkbox" name="allowVoteChanges" checked={values.config.allowVoteChanges} /> Let voters change their vote</label>
+        <p class="field-help">Off by default: once someone votes, their ballot is final. Turn this on to let voters come back and update it. You, as the poll's admin, can always update your own vote.</p>
+      </div>
 
       <fieldset>
         <legend>Vote reason</legend>

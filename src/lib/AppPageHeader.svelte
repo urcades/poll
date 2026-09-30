@@ -4,7 +4,8 @@
   import PrimaryAction, { type Primary } from "./PrimaryAction.svelte";
 
   type Props = {
-    title: string;
+    /** Omit on pages that show their own title in the content (e.g. poll pages). */
+    title?: string;
     backHref?: string;
     backLabel?: string;
     /** The page's one primary action, shown in the header's right corner. */
@@ -16,13 +17,15 @@
   let { title, backHref, backLabel = "Back", primary, actions }: Props = $props();
 </script>
 
-<header class="page-header" class:has-actions={Boolean(actions)}>
+<header class="page-header" class:has-actions={Boolean(actions)} aria-label={title ? `${title} page header` : "Page header"}>
   <div class="page-header-start">
     {#if backHref}
       <a class="page-header-back" href={backHref} aria-label={backLabel}><span aria-hidden="true">←</span> Back</a>
     {/if}
   </div>
-  <h1 class="page-header-title">{title}</h1>
+  {#if title}
+    <h1 class="page-header-title">{title}</h1>
+  {/if}
   <div class="page-header-end">
     {#if actions}
       <div class="header-actions">{@render actions()}</div>

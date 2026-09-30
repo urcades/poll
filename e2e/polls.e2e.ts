@@ -1,4 +1,4 @@
-import { closePoll, createDraft, expect, pageAction, openVoting, slugOf, submitVote, test, voteForm, type Person } from "./fixtures";
+import { closePoll, createDraft, expect, expectVoted, pageAction, openVoting, slugOf, submitVote, test, voteForm, type Person } from "./fixtures";
 
 /** Titles are unique per test because every test shares one database. */
 const uniq = (title: string) => `${title} ${Math.random().toString(36).slice(2, 8)}`;
@@ -10,7 +10,7 @@ async function vote(person: Person, slug: string, name: string, ...labels: strin
   await form.getByLabel("Your display name").fill(name);
   for (const label of labels) await form.getByLabel(label, { exact: true }).check();
   await submitVote(page);
-  await expect(page.getByRole("button", { name: "Update vote" })).toBeVisible();
+  await expectVoted(page);
 }
 
 /** Value cell of a results row, addressed by its option label. */
@@ -38,10 +38,27 @@ test("choose poll: draft, edit, open, vote, update, name clash, close, results, 
 
   await openVoting(A.page);
 
-  // Ada votes for Option A, Bo (another device) for Option B.
+  // Ada (the admin) votes for Option A.
   await vote(A, slug, "Ada", "Option A");
   await expect(A.page.getByText(/\b1 vote\b/)).toBeVisible();
-  await vote(B, slug, "Bo", "Option B");
+
+  // Bo, on another device, cannot take over the name Ada; the form keeps what Bo typed.
+  await B.page.goto(`/poll/${slug}`);
+  await voteForm(B.page).getByLabel("Your display name").fill("Ada");
+  await voteForm(B.page).getByLabel("Option C", { exact: true }).check();
+  await submitVote(B.page);
+  await expect(B.page.getByRole("alert")).toContainText(/name|taken|already/i);
+  await expect(voteForm(B.page).getByLabel("Your display name")).toHaveValue("Ada");
+  await expect(voteForm(B.page).getByLabel("Option C", { exact: true })).toBeChecked();
+  await expect(B.page.getByText(/\b1 vote\b/)).toBeVisible();
+
+  // Bo votes as himself for Option B; his vote is then final.
+  await voteForm(B.page).getByLabel("Your display name").fill("Bo");
+  await voteForm(B.page).getByLabel("Option C", { exact: true }).uncheck();
+  await voteForm(B.page).getByLabel("Option B", { exact: true }).check();
+  await submitVote(B.page);
+  await expect(B.page.getByText("Your vote is in")).toBeVisible();
+  await expect(B.page.getByRole("button", { name: /Submit vote|Update vote/ })).toHaveCount(0);
   await expect(B.page.getByText(/\b2 votes\b/)).toBeVisible();
 
   // Ada changes her mind.
@@ -52,16 +69,6 @@ test("choose poll: draft, edit, open, vote, update, name clash, close, results, 
   await voteForm(A.page).getByLabel("Option C", { exact: true }).check();
   await submitVote(A.page, "Update vote");
   await expect(voteForm(A.page).getByLabel("Option C", { exact: true })).toBeChecked();
-  await expect(A.page.getByText(/\b2 votes\b/)).toBeVisible();
-
-  // Bo cannot take over the name Ada; the form keeps what Bo typed.
-  await voteForm(B.page).getByLabel("Your display name").fill("Ada");
-  await voteForm(B.page).getByLabel("Option B", { exact: true }).uncheck();
-  await voteForm(B.page).getByLabel("Option C", { exact: true }).check();
-  await submitVote(B.page, "Update vote");
-  await expect(B.page.getByRole("alert")).toContainText(/name|taken|already/i);
-  await expect(voteForm(B.page).getByLabel("Your display name")).toHaveValue("Ada");
-  await expect(voteForm(B.page).getByLabel("Option C", { exact: true })).toBeChecked();
   await expect(A.page.getByText(/\b2 votes\b/)).toBeVisible();
 
   // Bo has no admin controls.
@@ -150,7 +157,7 @@ test("IRV: rank with clicks and keyboard, close, winner and rounds", async ({ pe
     await prepare(p);
     await expect(ranked(p)).toHaveText(expected);
     await submitVote(p.page);
-    await expect(p.page.getByRole("button", { name: "Update vote" })).toBeVisible();
+    await expectVoted(p.page);
     // The saved ranking survives a reload.
     await p.page.reload();
     await expect(ranked(p)).toHaveText(expected);
@@ -241,7 +248,7 @@ test("invite-only: strangers cannot vote, invitees vote through personal links",
   await expect(voteForm(invitee.page).getByLabel("Your display name")).toHaveCount(0);
   await voteForm(invitee.page).getByLabel("Option B", { exact: true }).check();
   await submitVote(invitee.page);
-  await expect(invitee.page.getByRole("button", { name: "Update vote" })).toBeVisible();
+  await expectVoted(invitee.page);
 
   await admin.page.reload();
   await expect(admin.page.locator("#invitations")).toContainText("1 of 2");
@@ -252,11 +259,12 @@ test("invite-only: strangers cannot vote, invitees vote through personal links",
 
 test("open poll page refreshes by itself when someone else votes", async ({ person }) => {
   const admin = await person();
-  const watcher = await person();
   const voter = await person();
   const slug = await createDraft(admin.page, { title: uniq("Live") });
   await openVoting(admin.page);
 
+  // The admin watches: results are hidden from non-voters by default, but not from the admin.
+  const watcher = admin;
   await watcher.page.goto(`/poll/${slug}`);
   await expect(watcher.page.getByText(/\b0 votes\b/)).toBeVisible();
   await vote(voter, slug, "Liv", "Option C");
@@ -330,7 +338,7 @@ test("time poll: pick slots, vote availability, close, download the .ics", async
       await form.locator(".slot").nth(index).getByRole("radio", { name: state, exact: true }).check();
     }
     await submitVote(p.page);
-    await expect(p.page.getByRole("button", { name: "Update vote" })).toBeVisible();
+    await expectVoted(p.page);
   }
 
   await availability(ada, "Ada", ["unavailable", "available", "if needed"]);
