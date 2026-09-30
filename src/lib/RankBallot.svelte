@@ -238,6 +238,30 @@
     </p>
 
     <div class="rank-lists">
+      <!-- Pool first, then the ranking: options move left to right as you rank them. -->
+      <div>
+        <h3 id="unranked-heading">Not ranked ({unranked.length})</h3>
+        <ul class="rank-list" class:rank-drop={drag && dropTarget === "unranked"} aria-labelledby="unranked-heading" bind:this={unrankedList}>
+          {#each unranked as option (option.id)}
+            <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+            <li
+              class="rank-item"
+              class:lifted={drag?.id === option.id}
+              style:transform={drag?.id === option.id ? `translate(${dragX}px, ${dragY}px)` : null}
+              data-item={option.id}
+              onpointerdown={(event) => pressItem(event, option.id, "unranked")}
+              onpointermove={movePointer}
+              onpointerup={releasePointer}
+              onpointercancel={endDrag}
+            >
+              <button type="button" class="rank-main" data-control="main" aria-disabled={full} aria-label={`${option.label}. Select to rank it.`} onclick={() => toggle(option.id)} onkeydown={(event) => onKeydown(event, option.id, "main")}>{option.label}</button>
+            </li>
+          {:else}
+            <li class="rank-empty">Every option is ranked.</li>
+          {/each}
+        </ul>
+      </div>
+
       <div>
         <h3 id="ranked-heading">Ranked ({ranked.length}{limited ? ` of ${maxRanks}` : ""})</h3>
         <ol class="rank-list" class:rank-drop={drag && dropTarget === "ranked"} aria-labelledby="ranked-heading" bind:this={rankedList}>
@@ -262,29 +286,6 @@
             <li class="rank-empty">Nothing ranked yet.</li>
           {/each}
         </ol>
-      </div>
-
-      <div>
-        <h3 id="unranked-heading">Not ranked ({unranked.length})</h3>
-        <ul class="rank-list" class:rank-drop={drag && dropTarget === "unranked"} aria-labelledby="unranked-heading" bind:this={unrankedList}>
-          {#each unranked as option (option.id)}
-            <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-            <li
-              class="rank-item"
-              class:lifted={drag?.id === option.id}
-              style:transform={drag?.id === option.id ? `translate(${dragX}px, ${dragY}px)` : null}
-              data-item={option.id}
-              onpointerdown={(event) => pressItem(event, option.id, "unranked")}
-              onpointermove={movePointer}
-              onpointerup={releasePointer}
-              onpointercancel={endDrag}
-            >
-              <button type="button" class="rank-main" data-control="main" aria-disabled={full} aria-label={`${option.label}. Select to rank it.`} onclick={() => toggle(option.id)} onkeydown={(event) => onKeydown(event, option.id, "main")}>{option.label}</button>
-            </li>
-          {:else}
-            <li class="rank-empty">Every option is ranked.</li>
-          {/each}
-        </ul>
       </div>
     </div>
 
