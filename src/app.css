@@ -530,12 +530,32 @@ details[open] > summary {
 }
 
 /* Informational notes: no fill, just a dotted outline, so they read as
-   guidance rather than something to interact with. */
+   guidance rather than something to interact with. The outline is an SVG
+   (CSS dotted borders can't space their dots); its corner radius tracks the
+   type size, which changes at 1600px. */
 .callout {
+  --callout-dots: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='1' y='1' rx='28' ry='28' style='width:calc(100%25 - 2px);height:calc(100%25 - 2px)' fill='none' stroke='%238b898c' stroke-width='1.5' stroke-linecap='round' stroke-dasharray='0 6'/%3E%3C/svg%3E");
   gap: var(--space-2);
   padding: var(--space-4);
-  border: 1px dotted color-mix(in srgb, var(--fg) 45%, transparent);
-  border-radius: var(--radius-card);
+  background: var(--callout-dots) no-repeat;
+}
+
+@media (prefers-color-scheme: dark) {
+  .callout {
+    --callout-dots: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='1' y='1' rx='28' ry='28' style='width:calc(100%25 - 2px);height:calc(100%25 - 2px)' fill='none' stroke='%238c8c8c' stroke-width='1.5' stroke-linecap='round' stroke-dasharray='0 6'/%3E%3C/svg%3E");
+  }
+}
+
+@media screen and (min-width: 1600px) {
+  .callout {
+    --callout-dots: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='1' y='1' rx='36' ry='36' style='width:calc(100%25 - 2px);height:calc(100%25 - 2px)' fill='none' stroke='%238b898c' stroke-width='1.5' stroke-linecap='round' stroke-dasharray='0 6'/%3E%3C/svg%3E");
+  }
+}
+
+@media screen and (min-width: 1600px) and (prefers-color-scheme: dark) {
+  .callout {
+    --callout-dots: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='1' y='1' rx='36' ry='36' style='width:calc(100%25 - 2px);height:calc(100%25 - 2px)' fill='none' stroke='%238c8c8c' stroke-width='1.5' stroke-linecap='round' stroke-dasharray='0 6'/%3E%3C/svg%3E");
+  }
 }
 
 [role="alert"] {
@@ -1009,7 +1029,6 @@ table.round-log {
 
 /* The site's rounder, squircle corners where the browser supports them. */
 @supports (corner-shape: superellipse(2)) {
-  .callout,
   .card,
   .option-block,
   .fixed-positions,
