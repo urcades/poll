@@ -5,7 +5,7 @@
   import { pendingForm } from "$lib/enhance.svelte";
   import { defaultOptionsText, templates } from "../templates";
   import { isProposalType, type PollConfig, type PollType } from "../types";
-  import { onMount, untrack } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
   import { parseSlot } from "$lib/shared";
 
   /**
@@ -74,7 +74,11 @@
   let optionItems = $state.raw(parseOptionsText(initial.values.optionsText));
   const initialSerialized = serializeOptions(parseOptionsText(initial.values.optionsText));
   let mounted = $state(false);
-  let draggedIndex = $state<number | null>(null);
+  // Pointer-driven reordering: the grabbed card follows the pointer (raised,
+  // opaque, shadowed) and the list reorders as it passes a neighbour's middle.
+  let drag = $state<{ uid: number; pointerId: number; startY: number } | null>(null);
+  let dragOffset = $state(0);
+  let optionList: HTMLElement | undefined = $state();
 
   let minChoices = $state(initial.values.config.minChoices ?? 1);
   let maxChoices = $state(initial.values.config.maxChoices ?? 1);
@@ -153,6 +157,69 @@
       optionItems = withLocalInputs(parseOptionsText(defaultOptionsText(selectedType)));
     }
     lastType = selectedType;
+  }
+
+  function startDrag(event: PointerEvent, uid: number) {
+    if (fixed || event.button !== 0) return;
+    const target = event.target as Element;
+    if (target.closest("input, textarea, select, button, a")) return;
+    // On touch, only the handle drags, so the card body still scrolls the page.
+    if (event.pointerType !== "mouse" && !target.closest(".drag-handle")) return;
+    event.preventDefault();
+    try {
+      (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    } catch {
+      // Capture only fails for pointers the browser no longer tracks.
+    }
+    drag = { uid, pointerId: event.pointerId, startY: event.clientY };
+    dragOffset = 0;
+  }
+
+  let reordering = false;
+  let pointerY = 0;
+
+  async function moveDrag(event: PointerEvent) {
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    pointerY = event.clientY;
+    dragOffset = pointerY - drag.startY;
+    // One reorder pass at a time; it always works from the latest pointer
+    // position, so moves that arrive mid-swap are not lost.
+    if (reordering || !optionList) return;
+    reordering = true;
+    try {
+      // Keep swapping until the card sits in the slot under the pointer, so a
+      // fast flick across several cards lands in the right place.
+      while (drag && optionList) {
+        const cards = [...optionList.querySelectorAll<HTMLElement>(":scope > .option-block")];
+        const index = optionItems.findIndex((option) => option.uid === drag?.uid);
+        const card = cards[index];
+        if (!card) break;
+        // Layout positions (offsetTop ignores the drag transform).
+        const center = card.offsetTop + card.offsetHeight / 2 + dragOffset;
+        const next = cards[index + 1];
+        const previous = cards[index - 1];
+        const to = next && center > next.offsetTop + next.offsetHeight / 2 ? index + 1
+          : previous && center < previous.offsetTop + previous.offsetHeight / 2 ? index - 1
+          : index;
+        if (to === index) break;
+        // Swap, then shift the drag origin by how far the card's slot moved so
+        // it stays under the pointer.
+        const before = card.offsetTop;
+        moveOption(index, to);
+        await tick();
+        if (!drag) break;
+        drag.startY += card.offsetTop - before;
+        dragOffset = pointerY - drag.startY;
+      }
+    } finally {
+      reordering = false;
+    }
+  }
+
+  function endDrag(event: PointerEvent) {
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    drag = null;
+    dragOffset = 0;
   }
 
   function moveOption(from: number, to: number) {
@@ -332,24 +399,18 @@
         {/each}
       </ul>
     {:else}
-    <div id="option-blocks" class="option-blocks">
+    <div id="option-blocks" class="option-blocks" bind:this={optionList}>
       {#each optionItems as option, index (option.uid)}
         <article
           class={`option-block option-block-${selectedType}`}
+          class:dragging={drag?.uid === option.uid}
           style:--option-pattern={optionPattern(option.uid)}
-          draggable="true"
+          style:transform={drag?.uid === option.uid ? `translateY(${dragOffset}px)` : null}
           data-index={index}
-          ondragstart={(event) => {
-            draggedIndex = index;
-            event.dataTransfer?.setData("text/plain", String(index));
-          }}
-          ondragover={(event) => event.preventDefault()}
-          ondrop={(event) => {
-            event.preventDefault();
-            const from = Number(event.dataTransfer?.getData("text/plain") || draggedIndex);
-            if (Number.isFinite(from)) moveOption(from, index);
-            draggedIndex = null;
-          }}
+          onpointerdown={(event) => startDrag(event, option.uid)}
+          onpointermove={moveDrag}
+          onpointerup={endDrag}
+          onpointercancel={endDrag}
         >
           <span class="drag-handle" title="Drag to reorder" aria-hidden="true">⠿</span>
           <div class="option-fields">

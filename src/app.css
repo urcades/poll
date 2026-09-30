@@ -726,6 +726,19 @@ table.round-log {
 .option-block {
   position: relative;
   isolation: isolate;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+/* While being dragged the card lifts: opaque (the same tint, mixed into the
+   page color), above its neighbours, with a soft shadow. It follows the
+   pointer directly, then eases back into its slot when dropped. */
+.option-block.dragging {
+  z-index: 5;
+  background-color: color-mix(in lab, var(--fg) 8%, var(--bg));
+  box-shadow: 0 0.7em 1.8em rgb(0 0 0 / 0.18), 0 0.15em 0.4em rgb(0 0 0 / 0.08);
+  transition: box-shadow 0.18s ease;
+  cursor: grabbing;
+  user-select: none;
 }
 
 .option-block::before {
@@ -773,6 +786,8 @@ table.round-log {
    glyph's 1.2 scale so the ems resolve at the card's text size. */
 .drag-handle {
   margin-inline-end: calc((var(--space-4) - var(--gap-inline)) / 1.2);
+  /* The handle takes touch drags itself instead of scrolling the page. */
+  touch-action: none;
   color: var(--muted);
   font-size: 1.2em;
   line-height: 1;
