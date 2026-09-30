@@ -13,7 +13,7 @@ import { hashSeed, mulberry32 } from "./shuffle";
  * own, but a rotated <pattern> can).
  */
 
-const CANT_DEGREES = 33;
+const CANT_DEGREES = 11;
 const CANVAS = { width: 2000, height: 600 };
 
 type Tile = { width: number; height: number; body: string };
