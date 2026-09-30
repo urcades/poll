@@ -763,9 +763,11 @@ table.round-log {
   gap: var(--gap-inline);
 }
 
-/* Bottom-aligned with the inputs (the drag handle stays centered). */
+/* Bottom-aligned with the inputs (the drag handle stays centered), and set
+   off from the fields by the same space as the card's right/bottom edges. */
 .option-actions {
   align-self: end;
+  margin-inline-start: calc(var(--space-3) - var(--gap-inline));
   display: flex;
   gap: var(--gap-inline);
   flex-wrap: wrap;
@@ -800,6 +802,7 @@ table.round-log {
 
   .option-actions {
     justify-content: start;
+    margin-inline-start: 0;
   }
 }
 
