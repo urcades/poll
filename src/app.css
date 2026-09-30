@@ -45,6 +45,8 @@ body {
 
   /* Controls are pill-soft; cards take the site's larger rounding. */
   --radius-control: 0.55em;
+  /* Buttons and single-line fields share one height: a line plus 0.35em above and below. */
+  --control-height: calc(1.33em + 0.7em);
   --radius-card: calc(1em + 10px);
 
   --inset: 2.22em;
@@ -271,6 +273,7 @@ fieldset,
   margin: 0;
   border: 0;
   border-radius: var(--radius-control);
+  height: var(--control-height);
   padding: 0.35em 0.65em;
   color: var(--fg);
   font: inherit;
@@ -405,9 +408,10 @@ textarea {
   width: 100%;
   max-width: none;
   margin: 0;
-  border: 1px solid transparent;
+  /* Same box as .button: one line of text plus 0.35em above and below. */
+  border: 0;
   border-radius: var(--radius-control);
-  padding: 0.45em 0.65em;
+  padding: 0.35em 0.65em;
   color: var(--fg);
   background-color: var(--tint);
   background-image: var(--noise);
@@ -424,6 +428,13 @@ select {
   background-repeat: no-repeat, repeat;
   background-position: right 0.65em center, 0 0;
   background-size: 0.7em auto, auto;
+}
+
+/* Pin single-line fields to the control height; date/time inputs otherwise
+   grow a couple of pixels from their built-in field padding. */
+input:not([type="checkbox"]):not([type="radio"]),
+select {
+  height: var(--control-height);
 }
 
 input::placeholder,
