@@ -760,14 +760,18 @@ table.round-log {
   padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
 }
 
-/* Each option card carries its own faint procedural texture (see
-   lib/patterns.ts) between its tint and its contents, so neighbouring
-   options are easy to tell apart. The tile is a mask over an ink layer, so
-   it follows the color scheme. */
 .option-block {
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+/* Reorderable items (editor option cards, ranking items) each carry their own
+   faint procedural texture (see lib/patterns.ts, set as --option-pattern)
+   between their background and their contents, so neighbours are easy to
+   tell apart. The tile is a mask over an ink layer, so it follows the color
+   scheme. */
+.textured {
   position: relative;
   isolation: isolate;
-  transition: transform 0.18s ease, box-shadow 0.18s ease;
 }
 
 /* A lifted card is opaque: its usual tint mixed into the page color. */
@@ -775,7 +779,7 @@ table.round-log {
   background-color: color-mix(in lab, var(--fg) 8%, var(--bg));
 }
 
-.option-block::before {
+.textured::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -988,11 +992,6 @@ table.round-log {
   padding: var(--space-2) var(--space-3);
   text-align: left;
   overflow-wrap: anywhere;
-}
-
-.rank-main:hover,
-.rank-move:hover:not(:disabled) {
-  background: var(--tint);
 }
 
 .rank-main[aria-disabled="true"] {

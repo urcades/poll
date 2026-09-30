@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import type { Option } from "../types";
+  import { optionPattern } from "./patterns";
 
   /**
    * Ranking ballot for rank / irv / stv. Server-rendered as one <select> per
@@ -245,9 +246,10 @@
           {#each unranked as option (option.id)}
             <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
             <li
-              class="rank-item"
+              class="rank-item textured"
               class:lifted={drag?.id === option.id}
               style:transform={drag?.id === option.id ? `translate(${dragX}px, ${dragY}px)` : null}
+              style:--option-pattern={optionPattern(option.id)}
               data-item={option.id}
               onpointerdown={(event) => pressItem(event, option.id, "unranked")}
               onpointermove={movePointer}
@@ -268,9 +270,10 @@
           {#each ranked as id, index (id)}
             <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
             <li
-              class="rank-item"
+              class="rank-item textured"
               class:lifted={drag?.id === id}
               style:transform={drag?.id === id ? `translate(${dragX}px, ${dragY}px)` : null}
+              style:--option-pattern={optionPattern(id)}
               data-item={id}
               onpointerdown={(event) => pressItem(event, id, "ranked")}
               onpointermove={movePointer}
