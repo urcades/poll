@@ -743,7 +743,11 @@ table.round-log {
   border-top: 1px solid var(--rule);
 }
 
+/* Equal space on both sides of the handle: the card's left padding, and
+   (with the inline gap) the same amount before the fields. Divided by the
+   glyph's 1.2 scale so the ems resolve at the card's text size. */
 .drag-handle {
+  margin-inline-end: calc((var(--space-4) - var(--gap-inline)) / 1.2);
   color: var(--muted);
   font-size: 1.2em;
   line-height: 1;
