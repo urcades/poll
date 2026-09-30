@@ -714,7 +714,9 @@ table.round-log {
   grid-template-columns: auto 1fr auto;
   gap: var(--gap-inline);
   align-items: center;
-  padding: var(--space-3) var(--space-4);
+  /* Right padding equals the bottom, so the button cluster sits square in
+     the corner; the left keeps the handle's wider, balanced inset. */
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
 }
 
 /* Inputs sit on paper inside a tinted card. */
@@ -789,6 +791,11 @@ table.round-log {
   .option-block,
   .option-fields {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Stacked, the fields span the card, so keep its sides even. */
+  .option-block {
+    padding-inline-end: var(--space-4);
   }
 
   .option-actions {
