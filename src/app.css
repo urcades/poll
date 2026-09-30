@@ -370,6 +370,26 @@ label:has(> input[type="checkbox"]:disabled) {
   cursor: not-allowed;
 }
 
+/* Allocate ballot: the running budget. Spent reads in full ink; overspent
+   (only while typing) in the error color. */
+.points-left {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.points-left[data-state="spent"] {
+  color: var(--fg);
+}
+
+.points-left[data-state="over"] {
+  color: var(--error);
+}
+
+label.inline-control:has(> input:disabled) {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
 .choice-meaning {
   display: block;
   color: var(--muted);

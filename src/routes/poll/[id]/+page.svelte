@@ -17,6 +17,7 @@
   import { isProposalType, type Option, type Poll, type Vote } from "../../../types";
   import { pendingForm } from "$lib/enhance.svelte";
   import { limitChoices } from "$lib/limitChoices";
+  import { pointBudget, pointsLeftText, pointsState } from "$lib/pointBudget";
   import { isClosed, isOpen, parseSlot, pollMeta, statusLabel } from "$lib/shared";
 
   let { data, form }: PageProps = $props();
@@ -325,8 +326,11 @@
         {/each}
       </fieldset>
     {:else if poll.type === "allocate"}
-      <fieldset>
-        <legend>Points<span class="legend-hint">: Share up to {poll.config.pointBudget ?? 8} points across the options</span></legend>
+      {@const budget = poll.config.pointBudget ?? 8}
+      {@const left = budget - options.reduce((sum, option) => sum + Math.max(0, Math.floor(Number(currentAllocations[String(option.id)] ?? 0)) || 0), 0)}
+      <fieldset use:pointBudget={budget}>
+        <legend>Points<span class="legend-hint">: Share up to {budget} points across the options</span></legend>
+        <p class="points-left" data-points-left data-state={pointsState(left)} aria-live="polite">{pointsLeftText(left, budget)}</p>
         {#each options as option (option.id)}
           <label class="inline-control">{option.label} <input type="number" name={`allocation_${option.id}`} min="0" step="1" value={String(currentAllocations[String(option.id)] ?? 0)} /></label>
         {/each}
