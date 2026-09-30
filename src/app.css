@@ -346,12 +346,10 @@ label > input[type="checkbox"] {
   margin: calc((1.33em - 0.8em) / 2) 0 0;
 }
 
-/* The rule for a group of choices ("Choose up to 2"), under its label. */
+/* The rule for a group of choices, inline after its label and greyed:
+   "Options: Choose up to 2". */
 .legend-hint {
-  display: block;
-  margin-top: 0.1em;
   color: var(--muted);
-  font-size: 0.9em;
 }
 
 .label-hint {

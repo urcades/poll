@@ -296,7 +296,7 @@
 
     {#if isProposalType(poll.type)}
       <fieldset>
-        <legend>{@render Required("Position")}<span class="legend-hint">Choose one</span></legend>
+        <legend>{@render Required("Position")}<span class="legend-hint">: Choose one</span></legend>
         {#each options as option (option.id)}
           <label>
             <input type="radio" name="optionId" value={option.id} checked={Number(currentBallot.optionId ?? 0) === option.id} required />
@@ -307,7 +307,7 @@
     {:else if poll.type === "choose" || poll.type === "approval"}
       {@const max = poll.type === "choose" ? (poll.config.maxChoices ?? 1) : null}
       <fieldset use:limitChoices={max !== null && max < options.length ? max : null}>
-        <legend>Options<span class="legend-hint">{poll.type === "approval" ? "Approve as many as you like" : chooseRule(poll.config.minChoices ?? 1, poll.config.maxChoices ?? 1)}</span></legend>
+        <legend>Options<span class="legend-hint">: {poll.type === "approval" ? "Approve as many as you like" : chooseRule(poll.config.minChoices ?? 1, poll.config.maxChoices ?? 1)}</span></legend>
         {#each options as option (option.id)}
           <label>
             <input type="checkbox" name="selected" value={option.id} checked={currentSelected.has(option.id)} />
@@ -319,14 +319,14 @@
       {@const min = poll.config.scoreMin ?? 0}
       {@const max = poll.config.scoreMax ?? 5}
       <fieldset>
-        <legend>{@render Required("Scores")}<span class="legend-hint">Score each option from {min} (worst) to {max} (best)</span></legend>
+        <legend>{@render Required("Scores")}<span class="legend-hint">: Score each option from {min} (worst) to {max} (best)</span></legend>
         {#each options as option (option.id)}
           <label class="inline-control">{option.label} <input type="number" name={`score_${option.id}`} min={min} max={max} value={String(currentScores[String(option.id)] ?? min)} required /></label>
         {/each}
       </fieldset>
     {:else if poll.type === "allocate"}
       <fieldset>
-        <legend>Points<span class="legend-hint">Share up to {poll.config.pointBudget ?? 8} points across the options</span></legend>
+        <legend>Points<span class="legend-hint">: Share up to {poll.config.pointBudget ?? 8} points across the options</span></legend>
         {#each options as option (option.id)}
           <label class="inline-control">{option.label} <input type="number" name={`allocation_${option.id}`} min="0" step="1" value={String(currentAllocations[String(option.id)] ?? 0)} /></label>
         {/each}
@@ -334,12 +334,12 @@
     {:else if poll.type === "rank" || poll.type === "irv" || poll.type === "stv"}
       {@const maxRanks = poll.type === "rank" ? (poll.config.rankCount ?? options.length) : options.length}
       <fieldset>
-        <legend>{@render Required("Ranking")}<span class="legend-hint">{poll.type === "rank" ? `Rank up to ${maxRanks}, most preferred first` : "Rank as many as you like, most preferred first"}</span></legend>
+        <legend>{@render Required("Ranking")}<span class="legend-hint">: {poll.type === "rank" ? `Rank up to ${maxRanks}, most preferred first` : "Rank as many as you like, most preferred first"}</span></legend>
         <RankBallot {options} {maxRanks} initial={currentRankings} limited={poll.type === "rank"} />
       </fieldset>
     {:else if poll.type === "time_poll"}
       <fieldset>
-        <legend>{@render Required("Availability")}<span class="legend-hint">Mark every slot</span></legend>
+        <legend>{@render Required("Availability")}<span class="legend-hint">: Mark every slot</span></legend>
         {#each options as option (option.id)}
           {@const current = String(currentAvailability[String(option.id)] ?? "unavailable")}
           <div class="slot">
