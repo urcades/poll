@@ -19,6 +19,7 @@
   --bg: var(--paper-tone);
   --fg: var(--ink);
   --error: oklch(50% 0.16 30);
+  --select-caret: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%231b1b1b' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   color-scheme: light;
 }
 
@@ -27,6 +28,7 @@
     --bg: var(--ink);
     --fg: var(--white);
     --error: oklch(76% 0.13 30);
+    --select-caret: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%23ffffff' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
     color-scheme: dark;
   }
 }
@@ -386,6 +388,17 @@ textarea {
   background-image: var(--noise);
   font: inherit;
   line-height: 1.33;
+}
+
+/* Draw the caret ourselves so it sits as far from the right edge as the
+   text sits from the left (the native arrow ignores padding). */
+select {
+  appearance: none;
+  padding-inline-end: calc(0.65em + 0.7em + 0.5em);
+  background-image: var(--select-caret), var(--noise);
+  background-repeat: no-repeat, repeat;
+  background-position: right 0.65em center, 0 0;
+  background-size: 0.7em auto, auto;
 }
 
 input::placeholder,
