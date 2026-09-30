@@ -20,7 +20,8 @@
     "preview": "vite preview --host 0.0.0.0 --port 3000",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && tsc --noEmit -p e2e/tsconfig.json",
     "test": "bun test",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "seed:demo": "bun scripts/seed-demo.ts"
   },
   "type": "module"
 }
