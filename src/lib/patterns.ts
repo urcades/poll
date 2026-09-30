@@ -5,7 +5,7 @@ import { hashSeed, mulberry32 } from "./shuffle";
  * family (stepping through FAMILIES, so consecutive seeds never share one);
  * each pass through the families (`cycle`) steps that family's spacing to a
  * new value, and seeded parameters (angle, mark size, weight, strength) vary
- * the rest. Marks are small and widely spaced so the textures stay sparse.
+ * the rest. Marks are small and far apart, so the textures stay sparse.
  * Tiles are drawn in black and used as a CSS mask over an ink layer, so the
  * app decides the color and opacity.
  */
@@ -21,7 +21,7 @@ const stroke = (width: number) => `fill='none' stroke='#000' stroke-width='${wid
 const FAMILIES: Family[] = [
   // Pinstripes: vertical, horizontal, or either diagonal (built so the tile repeats seamlessly).
   (random, spacing) => {
-    const s = spacing(12, 24);
+    const s = spacing(24, 48);
     const width = between(random, 0.5, 0.9);
     const direction = pick(random, ["vertical", "horizontal", "rising", "falling"] as const);
     const path = {
@@ -34,13 +34,13 @@ const FAMILIES: Family[] = [
   },
   // Polka dots on a square grid.
   (random, spacing) => {
-    const size = spacing(14, 26);
+    const size = spacing(28, 52);
     const radius = between(random, 0.8, 1.4);
     return { width: size, height: size, body: `<circle cx='${size / 2}' cy='${size / 2}' r='${radius}'/>` };
   },
   // Diamonds: small outlined or filled rhombi.
   (random, spacing) => {
-    const size = spacing(16, 28);
+    const size = spacing(32, 56);
     const half = between(random, 1.5, 2.6);
     const filled = random() < 0.5;
     const c = size / 2;
@@ -49,19 +49,19 @@ const FAMILIES: Family[] = [
   // Sparse speckle: a different turbulence per seed, thresholded to scattered grains.
   (random, _spacing, seed) => {
     const frequency = between(random, 0.6, 1.1);
-    const body = `<filter id='n'><feTurbulence type='fractalNoise' baseFrequency='${frequency}' numOctaves='2' seed='${seed}' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 4 -2.35'/></filter><rect width='100%' height='100%' filter='url(#n)'/>`;
-    return { width: 120, height: 120, body };
+    const body = `<filter id='n'><feTurbulence type='fractalNoise' baseFrequency='${frequency}' numOctaves='2' seed='${seed}' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 6 -4.1'/></filter><rect width='100%' height='100%' filter='url(#n)'/>`;
+    return { width: 200, height: 200, body };
   },
   // Offset (staggered) dots.
   (random, spacing) => {
-    const size = spacing(18, 30);
+    const size = spacing(36, 60);
     const radius = between(random, 0.7, 1.2);
     const q = size / 4;
     return { width: size, height: size, body: `<circle cx='${q}' cy='${q}' r='${radius}'/><circle cx='${q * 3}' cy='${q * 3}' r='${radius}'/>` };
   },
   // Chevrons (zigzag rows), with room between rows.
   (random, spacing) => {
-    const width = spacing(14, 26);
+    const width = spacing(28, 52);
     const height = Math.round(width * between(random, 0.7, 1));
     const weight = between(random, 0.5, 0.9);
     const rise = height * 0.3;
@@ -69,14 +69,14 @@ const FAMILIES: Family[] = [
   },
   // Open square grid lines.
   (random, spacing) => {
-    const size = spacing(16, 28);
+    const size = spacing(32, 56);
     const weight = between(random, 0.4, 0.7);
     return { width: size, height: size, body: `<path d='M0 0.5H${size}M0.5 0V${size}' ${stroke(weight)}/>` };
   },
   // Gentle waves, widely spaced rows.
   (random, spacing) => {
-    const width = spacing(20, 32);
-    const height = Math.round(between(random, 11, 16));
+    const width = spacing(40, 64);
+    const height = Math.round(between(random, 22, 32));
     const amplitude = between(random, 1.2, 2.2);
     const mid = height / 2;
     const weight = between(random, 0.5, 0.9);
@@ -85,13 +85,13 @@ const FAMILIES: Family[] = [
   },
   // Rings.
   (random, spacing) => {
-    const size = spacing(16, 28);
+    const size = spacing(32, 56);
     const radius = between(random, 1.6, 2.6);
     return { width: size, height: size, body: `<circle cx='${size / 2}' cy='${size / 2}' r='${radius}' ${stroke(0.9)}/>` };
   },
   // Tiny squares, upright or turned 45°.
   (random, spacing) => {
-    const size = spacing(14, 26);
+    const size = spacing(28, 52);
     const half = between(random, 1, 1.7);
     const c = size / 2;
     const body = random() < 0.5
@@ -101,7 +101,7 @@ const FAMILIES: Family[] = [
   },
   // Small crosses.
   (random, spacing) => {
-    const size = spacing(16, 28);
+    const size = spacing(32, 56);
     const arm = between(random, 1.3, 2.1);
     const c = size / 2;
     return { width: size, height: size, body: `<path d='M${c - arm} ${c}H${c + arm}M${c} ${c - arm}V${c + arm}' ${stroke(0.9)}/>` };
