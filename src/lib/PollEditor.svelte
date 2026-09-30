@@ -416,7 +416,7 @@
           <div class="option-fields">
             {#if selectedType === "time_poll"}
               <label>
-                Date and time{mounted ? " (your local time)" : " (UTC)"}
+                Date and time
                 <input type="datetime-local" required value={option.local || (mounted ? "" : option.label.slice(0, 16))} oninput={(event) => updateOption(index, { local: event.currentTarget.value, label: toIso(event.currentTarget.value) })} />
               </label>
               {#if mounted && option.label && !option.local}

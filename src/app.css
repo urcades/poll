@@ -796,6 +796,12 @@ table.round-log {
 
 /* Bottom-aligned with the inputs (the drag handle stays centered), and set
    off from the fields by the same space as the card's right/bottom edges. */
+/* Date-time inputs have a built-in minimum width (date, time, picker icon),
+   so give that column what it needs and let the note take the rest. */
+.option-block-time_poll .option-fields {
+  grid-template-columns: max-content minmax(0, 1fr);
+}
+
 .option-actions {
   align-self: end;
   margin-inline-start: calc(var(--space-3) - var(--gap-inline));
@@ -823,6 +829,10 @@ table.round-log {
   .field-grid,
   .option-block,
   .option-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .option-block-time_poll .option-fields {
     grid-template-columns: minmax(0, 1fr);
   }
 
