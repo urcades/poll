@@ -1,6 +1,7 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
   import Button from "$lib/Button.svelte";
+  import { optionPattern } from "$lib/patterns";
   import { pendingForm } from "$lib/enhance.svelte";
   import { defaultOptionsText, templates } from "../templates";
   import { isProposalType, type PollConfig, type PollType } from "../types";
@@ -335,6 +336,7 @@
       {#each optionItems as option, index (option.uid)}
         <article
           class={`option-block option-block-${selectedType}`}
+          style:--option-pattern={optionPattern(option.uid)}
           draggable="true"
           data-index={index}
           ondragstart={(event) => {

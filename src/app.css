@@ -719,6 +719,29 @@ table.round-log {
   padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
 }
 
+/* Each option card carries its own faint procedural texture (see
+   lib/patterns.ts) between its tint and its contents, so neighbouring
+   options are easy to tell apart. The tile is a mask over an ink layer, so
+   it follows the color scheme. */
+.option-block {
+  position: relative;
+  isolation: isolate;
+}
+
+.option-block::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  corner-shape: inherit;
+  background: var(--fg);
+  opacity: 0.12;
+  mask-image: var(--option-pattern, none);
+  mask-repeat: repeat;
+  pointer-events: none;
+}
+
 /* Inputs sit on paper inside a tinted card. */
 .option-block input:not([type="checkbox"]):not([type="radio"]) {
   background-color: var(--paper);
