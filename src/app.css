@@ -521,7 +521,6 @@ details[open] > summary {
 /* ---------- Surfaces ---------- */
 
 /* Tinted, grained cards, like the site's asides. */
-.callout,
 .card,
 .option-block,
 [role="alert"] {
@@ -530,9 +529,13 @@ details[open] > summary {
   background-image: var(--noise);
 }
 
+/* Informational notes: no fill, just a dotted outline, so they read as
+   guidance rather than something to interact with. */
 .callout {
   gap: var(--space-2);
   padding: var(--space-4);
+  border: 1px dotted color-mix(in srgb, var(--fg) 45%, transparent);
+  border-radius: var(--radius-card);
 }
 
 [role="alert"] {
