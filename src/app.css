@@ -1,12 +1,12 @@
-/* Design language: bogathon.flowercomputer.com. One serif at one weight,
+/* Design language: bogathon.flowercomputer.com. One sans at one weight,
    ink on paper, hierarchy from space and opacity rather than size or bold,
    tinted surfaces with a faint noise grain, soft superellipse corners. */
 
 @font-face {
-  font-family: "ABC Arizona Text";
-  src: url("/fonts/arizona.woff2") format("woff2");
+  font-family: "ABC Areal";
+  src: url("/fonts/areal.woff2") format("woff2");
   font-display: swap;
-  font-weight: 100 900;
+  font-weight: 400 700;
   font-style: normal;
 }
 
@@ -15,11 +15,10 @@
 :root {
   --ink: lab(10% 0 0);
   --white: lab(100% 0 0);
-  --paper-tone: oklch(94.22% 0.0034 325.6);
-  --bg: var(--paper-tone);
+  --bg: var(--white);
   --fg: var(--ink);
   --error: oklch(50% 0.16 30);
-  --check-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.3l2.3 2.3 4.7-5' fill='none' stroke='%23efedef' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --check-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.3l2.3 2.3 4.7-5' fill='none' stroke='%23ffffff' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   --select-caret: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%231b1b1b' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   color-scheme: light;
 }
@@ -64,9 +63,9 @@ body {
   padding: 0;
   color: var(--fg);
   background: var(--bg);
-  font-family: "ABC Arizona Text", serif;
+  font-family: "ABC Areal", sans-serif;
   font-size: 1.11em;
-  font-weight: 333;
+  font-weight: 400;
   line-height: 1.33;
 }
 
