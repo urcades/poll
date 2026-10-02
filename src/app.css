@@ -63,7 +63,8 @@ body {
   --pad-card-y: 1.25em;
   /* The one gap between controls sitting side by side (buttons, fields). */
   --gap-inline: var(--space-1);
-  --content-width: 66ch;
+  /* One width for the page: the cards and the header (back link, actions). */
+  --content-width: 76ch;
 
   margin: 0;
   padding: 0;
@@ -88,8 +89,8 @@ body {
 
 /* ---------- Page layout ---------- */
 
-/* The header can grow wide enough to hold a page's actions; the content
-   below stays in one readable column centered under the title. */
+/* The header and the content below share one column (--content-width),
+   centered; this wrapper only stops the page growing without bound. */
 body > div {
   max-width: 80rem;
   margin-inline: auto;
@@ -103,6 +104,9 @@ body > div > :not(.page-header, .header-scrim) {
 }
 
 .page-header {
+  width: 100%;
+  max-width: var(--content-width);
+  margin-inline: auto;
   margin-block-end: calc(var(--inset) - 0.55em);
 }
 
