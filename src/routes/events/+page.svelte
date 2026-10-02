@@ -17,6 +17,8 @@
 
 <AppPageHeader title="Usage log" backHref="/" backLabel="Back to home" />
 
+<p><a class="button button-secondary" href="/events/corrections">Jev corrections</a></p>
+
 <section>
   <h2>Filter</h2>
   <form method="get" class="filters">

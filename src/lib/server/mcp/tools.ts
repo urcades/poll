@@ -31,6 +31,7 @@ import {
   voteTokenCookie,
   voterNameCookie
 } from "../app";
+import { correctionRows, correctionStats, trainingJsonl } from "../corrections";
 import { filterFromInput, readEvents } from "../events";
 import { defaultConfigFor, templateByType, templates } from "../../../templates";
 import { isProposalType, POLL_TYPES, type Option, type Poll, type PollConfig, type Vote } from "../../../types";
@@ -857,6 +858,31 @@ export const tools: ToolDefinition[] = [
         next: rows.length > limit ? (events[events.length - 1]?.id ?? null) : null,
         summary: getStore().eventSummary({ ...filter, before: undefined })
       };
+    }
+  },
+  {
+    name: "get_jev_corrections",
+    title: "Read how Jev's readings were corrected",
+    description: "Instance operator only. Every plain-language description joined to what became of it: Jev's reading (voting method with confidence, title, options, settings), the poll the person finally saved, and the field-level corrections between them (including settings Jev missed), with an outcome per description (accepted, corrected, rephrased, abandoned, pending). Returns summary statistics (correction rate by field, voting-method confusions, confidence calibration) and rows. Set format to \"jsonl\" for training-ready lines of prompt, Jev's prediction and the corrected labels.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        since: { type: "string", description: "ISO date or time; descriptions at or after." },
+        until: { type: "string", description: "ISO date or time; descriptions before." },
+        limit: { type: "integer", description: "Most recent descriptions to include, 1 to 500 (default 100)." },
+        outcome: { type: "string", enum: ["accepted", "corrected", "rephrased", "abandoned", "pending"] },
+        format: { type: "string", enum: ["json", "jsonl"], description: "json (default) returns rows and statistics; jsonl returns the training export as text." }
+      },
+      additionalProperties: false
+    },
+    annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+    run(args, ctx) {
+      if (!isOperator(ctx.jar)) throw new ToolError("Only the instance operator can read Jev's corrections. Connect with the operator token as the bearer token.");
+      const limit = Math.min(Math.max(Math.trunc(Number(args.limit)) || 100, 1), 500);
+      const all = correctionRows({ since: typeof args.since === "string" ? args.since : undefined, until: typeof args.until === "string" ? args.until : undefined, limit });
+      const rows = typeof args.outcome === "string" ? all.filter((row) => row.outcome === args.outcome) : all;
+      if (args.format === "jsonl") return { jsonl: trainingJsonl(rows), rows: rows.length };
+      return { statistics: correctionStats(all), rows };
     }
   },
   {

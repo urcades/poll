@@ -1,6 +1,7 @@
 import type { EventFilter, EventRow } from "../../db";
 import type { Option, Poll, Vote } from "../../types";
 import { getStore } from "./app";
+import { suggestionChanges, type SuggestionLike } from "../suggestionDiff";
 import { currentContext } from "./context";
 
 /**
@@ -82,17 +83,8 @@ export function pollSnapshot(poll: PollContent, options: Array<{ label: string; 
 
 /** How a saved poll differs from what Jev pre-filled, so prompts can be scored against outcomes. */
 export function diffFromSuggestion(suggestion: Record<string, unknown>, saved: ReturnType<typeof pollSnapshot>) {
-  const changed: string[] = [];
-  if (suggestion.type !== saved.type) changed.push("type");
-  if (suggestion.title !== saved.title) changed.push("title");
-  const expectedOptions = typeof suggestion.optionsText === "string" ? suggestion.optionsText.split("\n").map((line) => line.split("|")[0]?.trim() ?? "").filter(Boolean) : null;
-  if (expectedOptions && JSON.stringify(expectedOptions) !== JSON.stringify(saved.options.map((option) => option.label))) changed.push("options");
-  const config = (suggestion.config ?? {}) as Record<string, unknown>;
-  const savedConfig = saved.config as unknown as Record<string, unknown>;
-  for (const [key, value] of Object.entries(config)) {
-    if (JSON.stringify(savedConfig[key]) !== JSON.stringify(value)) changed.push(`config.${key}`);
-  }
-  return { changed, unchanged: changed.length === 0 };
+  const changes = suggestionChanges(suggestion as unknown as SuggestionLike, saved);
+  return { changed: changes.map((change) => change.field), changes, unchanged: changes.length === 0 };
 }
 
 /** Option ids to labels, so a logged ballot is readable without the poll. */

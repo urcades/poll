@@ -54,6 +54,8 @@ export const HUMAN_CAPABILITIES: Record<string, Counterpart> = {
   "events/+page.server.ts#load": { tools: ["get_usage_events"] },
   "events/export.json/+server.ts#GET": { tools: ["get_usage_events"] },
   "events/export.csv/+server.ts#GET": { tools: ["get_usage_events"] }, // rows are the same events; CSV is a download format
+  "events/corrections/+page.server.ts#load": { tools: ["get_jev_corrections"] },
+  "events/corrections/export.jsonl/+server.ts#GET": { tools: ["get_jev_corrections"] }, // format: "jsonl"
   "api/events/+server.ts#POST": { excluded: "The browser tracker's beacon for page views and clicks (lib/track.ts); there is no page for an agent to click." },
 
   // The MCP endpoint itself

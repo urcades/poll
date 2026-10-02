@@ -53,6 +53,8 @@ Every event also has a timestamp, a source (`web`, `api`, `mcp`, `browser`), the
 
 **Reading it:** sign in with `/events?admin=<OPERATOR_TOKEN>` (anyone else gets a 404). The page filters by kind, kind prefix, poll, session, source, text and dates, shows counts per day and kind, expands each event's data, and downloads the same filter as JSON or CSV (`/events/export.json`, `/events/export.csv`). Agents connected as the operator use `get_usage_events`. To follow one prompt through: filter `kind=describe`, copy its `suggestionId`, then search that text.
 
+**Jev corrections:** `/events/corrections` joins every description to what became of it, using the log alone. For each one it shows Jev's reading (voting method with its probabilities, title, options, settings) next to the poll the person finally saved, including edits made to the draft afterwards, and lists the corrections field by field: `type`, `title`, `options` (what was added, removed or reordered), `optionCount` (when Jev only knew how many), and each `config.*` setting. A setting is flagged "Jev missed it" when Jev left it at the default and the person changed it; otherwise Jev set it wrongly. Each description gets an outcome: `accepted` (saved unchanged), `corrected`, `rephrased` (described again within 30 minutes without saving; the retry is shown), `abandoned` (nothing saved after an hour) or `pending`. The summary gives the share accepted, the correction rate by field, which voting methods Jev gets confused (Jev said X, they chose Y, and whether Y was a close second Jev had listed), and calibration: how often the method survives, by Jev's stated confidence. `/events/corrections/export.jsonl` (or `get_jev_corrections` with `format: "jsonl"`) downloads one line per description: the prompt, Jev's prediction and raw probabilities, and the corrected labels (`?saved=1` keeps only labelled rows), shaped for evaluating Jev or training a classifier. Rewrites that never become polls are in the log too, so unlabelled prompts remain available.
+
 **Settings:** `EVENT_LOG=off` disables recording; `EVENT_RETENTION_DAYS` (default 365) drops older events; `EVENT_STDOUT=off` keeps rows but skips the stdout line.
 
 ## Agent Interface (MCP)
@@ -74,6 +76,7 @@ Tools:
 | `get_results` | The tally, following the poll's visibility rules | anyone allowed to see it |
 | `list_my_polls` | Polls this session created, voted in or was invited to (everything for the operator) | session |
 | `get_usage_events` | The usage log with filters and per-day counts (see Usage Log) | operator |
+| `get_jev_corrections` | How Jev's readings were corrected: per-field corrections, outcomes, statistics, training export (see Usage Log) | operator |
 | `update_draft` | Partial edit of a draft (only the fields passed change) | admin |
 | `open_poll`, `schedule_poll`, `unschedule_poll`, `close_poll` | Lifecycle; `schedule_poll` can set `opensAt` in the same call | admin |
 | `add_invitees` | Invite more people; returns their personal links | admin |
