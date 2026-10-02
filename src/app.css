@@ -610,6 +610,11 @@ details[open] > summary {
 
 /* ---------- Poll pages ---------- */
 
+/* The home page's prompt field: one bare input across the whole body width. */
+.prompt-field {
+  display: block;
+}
+
 /* "Results: <outcome>" on the left, the quorum note pushed to the right. */
 .results-head {
   display: flex;

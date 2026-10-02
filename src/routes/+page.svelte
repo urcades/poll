@@ -27,6 +27,13 @@
 
 <AppPageHeader title="My votes" primary={{ label: "New vote/proposal", href: resolve("/new") }} />
 
+<!-- Describe a vote in plain words; this is where the prompt is interpreted and
+     routed to a pre-filled poll. The field is in place; the interpretation isn't wired yet. -->
+<form class="prompt-field" onsubmit={(event) => event.preventDefault()}>
+  <label class="sr-only" for="poll-prompt">Describe a vote or proposal</label>
+  <input id="poll-prompt" name="prompt" type="text" autocomplete="off" maxlength="2000" placeholder="Describe a vote or proposal…" />
+</form>
+
 {#if isEmpty}
   <section>
     <p>Polls you create or vote in show up here.</p>
