@@ -7,11 +7,16 @@ import { isClosed, parseSlot } from "../shared";
 import { seededShuffle } from "../shuffle";
 
 let store: Store | null = null;
+let storeDurable: DurableStorage | undefined;
 
 export function getStore(): Store {
   // On Cloudflare the app runs inside one Durable Object, which hands over its
-  // SQLite storage here (worker/index.ts); everywhere else it is a file.
+  // SQLite storage here (worker/index.ts); everywhere else it is a file. A
+  // restarted object can reuse this isolate with new storage, and the old
+  // storage then refuses all I/O, so reopen whenever the storage changes.
   const durable = (globalThis as { __pollDurableStorage?: DurableStorage }).__pollDurableStorage;
+  if (store && durable !== storeDurable) store = null;
+  storeDurable = durable;
   store ??= new Store(durable ?? process.env.DB_PATH ?? "work/votes.sqlite");
   return store;
 }
