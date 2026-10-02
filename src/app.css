@@ -47,6 +47,8 @@ body {
   /* Buttons and single-line fields share one height: a line plus 0.35em above and below. */
   --control-height: calc(1.33em + 0.7em);
   --radius-card: calc(1em + 10px);
+  /* Section cards: a round (not squircle) corner, larger than inner cards. */
+  --radius-section: 28px;
 
   --inset: 2.22em;
   --space-1: 0.25em;
@@ -117,7 +119,7 @@ body > div > section:not(.poll-intro, .callout),
 form:has(> section) > :is(section, .form-details) {
   padding: var(--space-5);
   border: 1px solid var(--rule);
-  border-radius: var(--radius-card);
+  border-radius: var(--radius-section);
 }
 
 body > div > section.callout {
@@ -165,6 +167,7 @@ body > div > section.callout {
   body {
     font-size: 1.5em;
     --inset: 3.33em;
+    --radius-section: 36px;
   }
 }
 
@@ -630,7 +633,7 @@ details[open] > summary {
    (CSS dotted borders can't space their dots); its corner radius tracks the
    type size, which changes at 1600px. */
 .callout {
-  --callout-dots: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='1' y='1' rx='28' ry='28' style='width:calc(100%25 - 2px);height:calc(100%25 - 2px)' fill='none' stroke='%231b1b1b' stroke-width='1.5' stroke-linecap='round' stroke-dasharray='0 6'/%3E%3C/svg%3E");
+  --callout-dots: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='1' y='1' rx='19' ry='19' style='width:calc(100%25 - 2px);height:calc(100%25 - 2px)' fill='none' stroke='%231b1b1b' stroke-width='1.5' stroke-linecap='round' stroke-dasharray='0 6'/%3E%3C/svg%3E");
   gap: var(--space-2);
   padding: var(--space-4);
   background: var(--callout-dots) no-repeat;
@@ -638,18 +641,42 @@ details[open] > summary {
 
 @media (prefers-color-scheme: dark) {
   .callout {
-    --callout-dots: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='1' y='1' rx='28' ry='28' style='width:calc(100%25 - 2px);height:calc(100%25 - 2px)' fill='none' stroke='%23ffffff' stroke-width='1.5' stroke-linecap='round' stroke-dasharray='0 6'/%3E%3C/svg%3E");
+    --callout-dots: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='1' y='1' rx='19' ry='19' style='width:calc(100%25 - 2px);height:calc(100%25 - 2px)' fill='none' stroke='%23ffffff' stroke-width='1.5' stroke-linecap='round' stroke-dasharray='0 6'/%3E%3C/svg%3E");
   }
 }
 
 @media screen and (min-width: 1600px) {
   .callout {
-    --callout-dots: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='1' y='1' rx='36' ry='36' style='width:calc(100%25 - 2px);height:calc(100%25 - 2px)' fill='none' stroke='%231b1b1b' stroke-width='1.5' stroke-linecap='round' stroke-dasharray='0 6'/%3E%3C/svg%3E");
+    --callout-dots: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='1' y='1' rx='26' ry='26' style='width:calc(100%25 - 2px);height:calc(100%25 - 2px)' fill='none' stroke='%231b1b1b' stroke-width='1.5' stroke-linecap='round' stroke-dasharray='0 6'/%3E%3C/svg%3E");
   }
 }
 
 @media screen and (min-width: 1600px) and (prefers-color-scheme: dark) {
   .callout {
+    --callout-dots: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='1' y='1' rx='26' ry='26' style='width:calc(100%25 - 2px);height:calc(100%25 - 2px)' fill='none' stroke='%23ffffff' stroke-width='1.5' stroke-linecap='round' stroke-dasharray='0 6'/%3E%3C/svg%3E");
+  }
+}
+
+/* A callout that is itself a page section (Manage poll) keeps the section
+   card's corner, so it sits level with the cards around it. */
+body > div > section.callout {
+  --callout-dots: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='1' y='1' rx='28' ry='28' style='width:calc(100%25 - 2px);height:calc(100%25 - 2px)' fill='none' stroke='%231b1b1b' stroke-width='1.5' stroke-linecap='round' stroke-dasharray='0 6'/%3E%3C/svg%3E");
+}
+
+@media (prefers-color-scheme: dark) {
+  body > div > section.callout {
+    --callout-dots: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='1' y='1' rx='28' ry='28' style='width:calc(100%25 - 2px);height:calc(100%25 - 2px)' fill='none' stroke='%23ffffff' stroke-width='1.5' stroke-linecap='round' stroke-dasharray='0 6'/%3E%3C/svg%3E");
+  }
+}
+
+@media screen and (min-width: 1600px) {
+  body > div > section.callout {
+    --callout-dots: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='1' y='1' rx='36' ry='36' style='width:calc(100%25 - 2px);height:calc(100%25 - 2px)' fill='none' stroke='%231b1b1b' stroke-width='1.5' stroke-linecap='round' stroke-dasharray='0 6'/%3E%3C/svg%3E");
+  }
+}
+
+@media screen and (min-width: 1600px) and (prefers-color-scheme: dark) {
+  body > div > section.callout {
     --callout-dots: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='1' y='1' rx='36' ry='36' style='width:calc(100%25 - 2px);height:calc(100%25 - 2px)' fill='none' stroke='%23ffffff' stroke-width='1.5' stroke-linecap='round' stroke-dasharray='0 6'/%3E%3C/svg%3E");
   }
 }
@@ -1181,8 +1208,6 @@ table.round-log {
 
 /* The site's rounder, squircle corners where the browser supports them. */
 @supports (corner-shape: superellipse(2)) {
-  body > div > section:not(.poll-intro, .callout),
-  form:has(> section) > :is(section, .form-details),
   .card,
   .option-block,
   .fixed-positions,
