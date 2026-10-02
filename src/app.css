@@ -58,9 +58,9 @@ body {
   --space-5: 1.5em;
   --space-6: 3em;
   /* Card padding: section cards, then the cards inside them (x = sides, y = top and bottom). */
-  --pad-section: 1.75em;
-  --pad-card-x: 1.25em;
-  --pad-card-y: 1em;
+  --pad-section: 2em;
+  --pad-card-x: 1.5em;
+  --pad-card-y: 1.25em;
   /* The one gap between controls sitting side by side (buttons, fields). */
   --gap-inline: var(--space-1);
   --content-width: 66ch;
@@ -996,7 +996,7 @@ table.round-log {
 .rank-list {
   min-height: 3em;
   margin: 0;
-  padding: var(--space-3);
+  padding: var(--space-4);
   list-style: none;
   border: 1px dashed var(--rule);
   border-radius: var(--radius-card);
