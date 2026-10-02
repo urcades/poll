@@ -630,10 +630,11 @@ details[open] > summary {
 
 /* Informational notes: no fill, just a dotted outline, so they read as
    guidance rather than something to interact with. The outline is an SVG
-   (CSS dotted borders can't space their dots); its corner radius tracks the
-   type size, which changes at 1600px. */
+   (CSS dotted borders can't space their dots). A callout inside a card takes
+   the same small corner as buttons and fields (about 0.75em, set in px since
+   an SVG outline can't use em); it changes at 1600px with the type size. */
 .callout {
-  --callout-dots: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='1' y='1' rx='19' ry='19' style='width:calc(100%25 - 2px);height:calc(100%25 - 2px)' fill='none' stroke='%231b1b1b' stroke-width='1.5' stroke-linecap='round' stroke-dasharray='0 6'/%3E%3C/svg%3E");
+  --callout-dots: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='1' y='1' rx='11' ry='11' style='width:calc(100%25 - 2px);height:calc(100%25 - 2px)' fill='none' stroke='%231b1b1b' stroke-width='1.5' stroke-linecap='round' stroke-dasharray='0 6'/%3E%3C/svg%3E");
   gap: var(--space-2);
   padding: var(--space-4);
   background: var(--callout-dots) no-repeat;
@@ -641,19 +642,19 @@ details[open] > summary {
 
 @media (prefers-color-scheme: dark) {
   .callout {
-    --callout-dots: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='1' y='1' rx='19' ry='19' style='width:calc(100%25 - 2px);height:calc(100%25 - 2px)' fill='none' stroke='%23ffffff' stroke-width='1.5' stroke-linecap='round' stroke-dasharray='0 6'/%3E%3C/svg%3E");
+    --callout-dots: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='1' y='1' rx='11' ry='11' style='width:calc(100%25 - 2px);height:calc(100%25 - 2px)' fill='none' stroke='%23ffffff' stroke-width='1.5' stroke-linecap='round' stroke-dasharray='0 6'/%3E%3C/svg%3E");
   }
 }
 
 @media screen and (min-width: 1600px) {
   .callout {
-    --callout-dots: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='1' y='1' rx='26' ry='26' style='width:calc(100%25 - 2px);height:calc(100%25 - 2px)' fill='none' stroke='%231b1b1b' stroke-width='1.5' stroke-linecap='round' stroke-dasharray='0 6'/%3E%3C/svg%3E");
+    --callout-dots: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='1' y='1' rx='14' ry='14' style='width:calc(100%25 - 2px);height:calc(100%25 - 2px)' fill='none' stroke='%231b1b1b' stroke-width='1.5' stroke-linecap='round' stroke-dasharray='0 6'/%3E%3C/svg%3E");
   }
 }
 
 @media screen and (min-width: 1600px) and (prefers-color-scheme: dark) {
   .callout {
-    --callout-dots: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='1' y='1' rx='26' ry='26' style='width:calc(100%25 - 2px);height:calc(100%25 - 2px)' fill='none' stroke='%23ffffff' stroke-width='1.5' stroke-linecap='round' stroke-dasharray='0 6'/%3E%3C/svg%3E");
+    --callout-dots: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='1' y='1' rx='14' ry='14' style='width:calc(100%25 - 2px);height:calc(100%25 - 2px)' fill='none' stroke='%23ffffff' stroke-width='1.5' stroke-linecap='round' stroke-dasharray='0 6'/%3E%3C/svg%3E");
   }
 }
 
