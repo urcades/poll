@@ -1,5 +1,5 @@
 import { error, json, redirect, type Cookies } from "@sveltejs/kit";
-import { deriveInviteToken, hashToken, MAX_INVITEES, Store, tokenMatches, type CreatePollInput } from "../../db";
+import { deriveInviteToken, hashToken, MAX_INVITEES, Store, tokenMatches, type CreatePollInput, type DurableStorage } from "../../db";
 import { baseConfig, defaultConfigFor, templateByType } from "../../templates";
 import { tallyPoll, validateBallot } from "../../tally";
 import { isProposalType, POLL_TYPES, type Invite, type Option, type Poll, type PollConfig, type PollType, type PublicTallyResult, type TallyResult, type Vote } from "../../types";
@@ -9,7 +9,10 @@ import { seededShuffle } from "../shuffle";
 let store: Store | null = null;
 
 export function getStore(): Store {
-  store ??= new Store(process.env.DB_PATH ?? "work/votes.sqlite");
+  // On Cloudflare the app runs inside one Durable Object, which hands over its
+  // SQLite storage here (worker/index.ts); everywhere else it is a file.
+  const durable = (globalThis as { __pollDurableStorage?: DurableStorage }).__pollDurableStorage;
+  store ??= new Store(durable ?? process.env.DB_PATH ?? "work/votes.sqlite");
   return store;
 }
 

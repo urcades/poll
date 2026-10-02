@@ -1,0 +1,9 @@
+// Read only by @sveltejs/adapter-cloudflare: where to write the SvelteKit
+// worker and static files. The deployed config is ../wrangler.jsonc, whose
+// entry (worker/index.ts) wraps that worker in the PollApp Durable Object.
+{
+  "name": "poll",
+  "main": "../.svelte-kit/cloudflare/_worker.js",
+  "compatibility_date": "2026-09-01",
+  "assets": { "directory": "../.svelte-kit/cloudflare/assets", "binding": "ASSETS" }
+}

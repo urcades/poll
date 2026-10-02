@@ -1,10 +1,12 @@
-import adapter from "@sveltejs/adapter-node";
+import cloudflare from "@sveltejs/adapter-cloudflare";
+import node from "@sveltejs/adapter-node";
 import { vitePreprocess } from "@sveltejs/vite-plugin-svelte";
 
 const config = {
   preprocess: vitePreprocess(),
   kit: {
-    adapter: adapter(),
+    // ADAPTER=cloudflare builds the Worker (wrangler.jsonc); the default is the Node server.
+    adapter: process.env.ADAPTER === "cloudflare" ? cloudflare({ config: "worker/adapter.wrangler.jsonc" }) : node(),
     csp: {
       mode: "auto",
       directives: {

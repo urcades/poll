@@ -29,8 +29,13 @@ export default defineConfig({
     { name: "mobile", use: { ...devices["Pixel 7"], viewport: { width: 375, height: 812 } }, testMatch: /mobile\.e2e\.ts/ }
   ],
   // Production build on purpose: it is what enforces the strict CSP.
+  // E2E_TARGET=worker runs the same suite against the Cloudflare Worker
+  // (Durable Object + SQLite) in wrangler's local runtime.
   webServer: {
-    command: "bun run build && node build/index.js",
+    command:
+      process.env.E2E_TARGET === "worker"
+        ? `bun run build:cloudflare && wrangler dev --local --ip 127.0.0.1 --port ${PORT} --persist-to ${process.env.E2E_DB_DIR} --var RATE_LIMIT:off`
+        : "bun run build && node build/index.js",
     url: `${ORIGIN}/`,
     reuseExistingServer: false,
     timeout: 180_000,

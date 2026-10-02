@@ -2,7 +2,9 @@
   "name": "minimal-loomio-voting",
   "version": "0.1.0",
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261002.1",
     "@playwright/test": "^1.63.0",
+    "@sveltejs/adapter-cloudflare": "^7",
     "@sveltejs/adapter-node": "^5.5.4",
     "@sveltejs/kit": "^2.63.0",
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
@@ -11,16 +13,19 @@
     "svelte": "^5.56.2",
     "svelte-check": "^4.6.0",
     "typescript": "^6.0.3",
-    "vite": "^8.0.16"
+    "vite": "^8.0.16",
+    "wrangler": "^4.147.0"
   },
   "private": true,
   "scripts": {
     "dev": "vite dev --host 0.0.0.0 --port 3000",
     "build": "vite build",
+    "build:cloudflare": "ADAPTER=cloudflare vite build",
     "preview": "vite preview --host 0.0.0.0 --port 3000",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && tsc --noEmit -p e2e/tsconfig.json",
     "test": "bun test",
     "test:e2e": "playwright test",
+    "test:e2e:worker": "E2E_TARGET=worker playwright test",
     "seed:demo": "bun scripts/seed-demo.ts"
   },
   "type": "module"

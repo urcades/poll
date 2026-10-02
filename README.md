@@ -191,6 +191,21 @@ fly secrets set LITESTREAM_REPLICA_URL=s3://my-bucket/poll \
 
 Any S3-compatible store works (Tigris, R2, B2); non-AWS endpoints take an `?endpoint=` query on the URL. Without Litestream, take regular volume snapshots if losing poll history would hurt.
 
+## Deploying To Cloudflare Workers
+
+The app is one stateful process (SQLite, in-memory rate limits and MCP sessions), so on Cloudflare it runs inside a single Durable Object, `PollApp`, whose built-in SQLite storage holds the database. `worker/index.ts` forwards every request that isn't a static file to that object, which runs the SvelteKit app built by `@sveltejs/adapter-cloudflare`. `src/db.ts` has a Durable Object driver: transactions use `transactionSync`, and the schema version lives in a `_meta` table because Durable Objects don't allow `PRAGMA user_version`.
+
+```bash
+bun run build:cloudflare                 # ADAPTER=cloudflare vite build
+npx wrangler dev --local                 # try it locally (state in .wrangler/)
+bun run test:e2e:worker                  # the browser suite against the Worker
+npx wrangler secret put TYPESAFE_API_KEY # optional: describing a vote in words
+npx wrangler secret put OPERATOR_TOKEN   # optional
+npx wrangler deploy
+```
+
+Deploy with Wrangler: the `cf` CLI (v1.0.0-beta) does not support SvelteKit projects yet. Without a `routes` or custom domain the Worker is served at `poll.<your-subdomain>.workers.dev`. The Node build (`bun run build`, Docker, Fly) is unchanged and remains the default.
+
 ## Useful Commands
 
 Run type and Svelte checks:

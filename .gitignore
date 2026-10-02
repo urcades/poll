@@ -24,3 +24,6 @@ playwright-report/
 
 # Scratch git worktrees used by coding agents
 .claude/worktrees/
+
+# Cloudflare local state
+.wrangler/

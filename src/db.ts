@@ -5,9 +5,9 @@ import { dirname } from "node:path";
 import type { Invite, Option, Poll, PollConfig, PollStatus, PollType, Vote } from "./types";
 import { defaultConfigFor } from "./templates";
 
-const require = createRequire(import.meta.url);
-
 type SqliteDatabase = {
+  /** Durable Object storage: no PRAGMA user_version, foreign_keys or WAL; versions live in _meta. */
+  durable?: boolean;
   close(): void;
   exec(sql: string): void;
   run(sql: string, ...params: unknown[]): unknown;
@@ -37,12 +37,12 @@ type NodeSqliteModule = {
 
 function createDatabase(path: string): SqliteDatabase {
   if (!("Bun" in globalThis)) return createNodeDatabase(path);
-  const { Database } = require("bun:sqlite") as BunSqliteModule;
+  const { Database } = createRequire(import.meta.url)("bun:sqlite") as BunSqliteModule;
   return new Database(path, { create: true });
 }
 
 function createNodeDatabase(path: string): SqliteDatabase {
-  const { DatabaseSync } = require("node:sqlite") as NodeSqliteModule;
+  const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as NodeSqliteModule;
   const db = new DatabaseSync(path);
   return {
     close: () => db.close(),
@@ -67,6 +67,37 @@ function createNodeDatabase(path: string): SqliteDatabase {
         throw error;
       }
     }
+  };
+}
+
+/** The parts of a Durable Object's storage the driver needs (see worker/index.ts). */
+export interface DurableStorage {
+  sql: { exec(sql: string, ...params: unknown[]): { toArray(): unknown[] } };
+  transactionSync<T>(fn: () => T): T;
+}
+
+// Durable Object SQL binds strings, numbers, null and buffers only.
+const bindable = (params: unknown[]) => params.map((value) => (typeof value === "boolean" ? Number(value) : value === undefined ? null : value));
+
+function createDurableDatabase(storage: DurableStorage): SqliteDatabase {
+  const rows = (sql: string, params: unknown[]) => storage.sql.exec(sql, ...bindable(params)).toArray();
+  const run = (sql: string, params: unknown[]) => {
+    rows(sql, params);
+    const meta = rows("SELECT changes() AS changes, last_insert_rowid() AS id", []);
+    const { changes, id } = meta[0] as { changes: number; id: number };
+    return { changes, lastInsertRowid: id };
+  };
+  return {
+    durable: true,
+    close: () => {},
+    exec: (sql) => void storage.sql.exec(sql),
+    run: (sql, ...params) => run(sql, params),
+    query: (sql) => ({
+      all: (...params) => rows(sql, params),
+      get: (...params) => rows(sql, params)[0] ?? null,
+      run: (...params) => run(sql, params)
+    }),
+    transaction: (fn) => () => storage.transactionSync(fn)
   };
 }
 
@@ -331,7 +362,12 @@ const MIGRATIONS: Migration[] = [
 export class Store {
   db: SqliteDatabase;
 
-  constructor(path = "work/votes.sqlite") {
+  constructor(path: string | DurableStorage = "work/votes.sqlite") {
+    if (typeof path !== "string") {
+      this.db = createDurableDatabase(path);
+      this.migrate();
+      return;
+    }
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
     this.db = createDatabase(path);
     this.db.run("PRAGMA foreign_keys = ON");
@@ -347,6 +383,31 @@ export class Store {
   }
 
   migrate() {
+    if (this.db.durable) {
+      this.migrateDurable();
+    } else {
+      this.migrateFile();
+    }
+    this.sweepSchedule();
+    this.db.query("UPDATE polls SET opened_at = COALESCE(opened_at, created_at) WHERE status = 'open'").run();
+  }
+
+  /** Durable Objects always enforce foreign keys; defer the checks to each migration's commit instead. */
+  private migrateDurable() {
+    this.db.exec("CREATE TABLE IF NOT EXISTS _meta (key TEXT PRIMARY KEY, value INTEGER NOT NULL)");
+    const row = this.db.query("SELECT value FROM _meta WHERE key = 'user_version'").get() as { value: number } | null;
+    const current = row?.value ?? 0;
+    for (const migration of MIGRATIONS) {
+      if (migration.version <= current) continue;
+      this.db.transaction(() => {
+        this.db.exec("PRAGMA defer_foreign_keys = ON");
+        migration.up(this.db);
+        this.db.query("INSERT INTO _meta (key, value) VALUES ('user_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(migration.version);
+      })();
+    }
+  }
+
+  private migrateFile() {
     // Table rebuilds (migration 2) need foreign keys off; that pragma is a
     // no-op inside a transaction, so toggle it around the whole run.
     this.db.run("PRAGMA foreign_keys = OFF");
@@ -364,9 +425,6 @@ export class Store {
     } finally {
       this.db.run("PRAGMA foreign_keys = ON");
     }
-
-    this.sweepSchedule();
-    this.db.query("UPDATE polls SET opened_at = COALESCE(opened_at, created_at) WHERE status = 'open'").run();
   }
 
   /**

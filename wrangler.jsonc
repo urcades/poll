@@ -1,0 +1,14 @@
+// Cloudflare Workers deployment. Build with `bun run build:cloudflare`, then
+// deploy with `cf deploy` (or `wrangler deploy`). See README "Deploying To Cloudflare".
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "poll",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-09-01",
+  // node:crypto and process.env (secrets appear there) for the shared server code.
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": { "directory": ".svelte-kit/cloudflare/assets", "binding": "ASSETS" },
+  "durable_objects": { "bindings": [{ "name": "APP", "class_name": "PollApp" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["PollApp"] }],
+  "observability": { "enabled": true }
+}
