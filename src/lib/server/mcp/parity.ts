@@ -50,6 +50,12 @@ export const HUMAN_CAPABILITIES: Record<string, Counterpart> = {
   "poll/[id]/event.ics/+server.ts#GET": { tools: ["get_results"] }, // results.calendarUrl
   "poll/[id]/version/+server.ts#GET": { tools: ["get_poll"] }, // the `version` field
 
+  // The operator's usage log
+  "events/+page.server.ts#load": { tools: ["get_usage_events"] },
+  "events/export.json/+server.ts#GET": { tools: ["get_usage_events"] },
+  "events/export.csv/+server.ts#GET": { tools: ["get_usage_events"] }, // rows are the same events; CSV is a download format
+  "api/events/+server.ts#POST": { excluded: "The browser tracker's beacon for page views and clicks (lib/track.ts); there is no page for an agent to click." },
+
   // The MCP endpoint itself
   "mcp/+server.ts#POST": { excluded: "This is the MCP endpoint." },
   "mcp/+server.ts#GET": { excluded: "This is the MCP endpoint." },

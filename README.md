@@ -33,6 +33,28 @@ How it works: code finds the candidate options (bullet lines, a list after a col
 
 Set `TYPESAFE_API_KEY` on the server (`.env` locally, see `.env.example`; `fly secrets set TYPESAFE_API_KEY=...` on Fly). Without it the field is shown disabled with a note. The key stays on the server, the description is sent only to `api.typesafe.ai`, and it travels to the editor in browser navigation state, never in a URL. Each description counts against the creation rate limit. Agents do not need this: over MCP they choose the method and fill the settings themselves (`list_poll_types`, `create_poll`).
 
+## Usage Log
+
+Everything notable is recorded as an event in an `events` table in the app's own database (so prompts, polls and votes can be joined), and as one JSON line on stdout (`usageEvent: true`), which Cloudflare's log stream, Workers observability and `fly logs` pick up.
+
+| Kind | What it holds |
+| --- | --- |
+| `describe`, `describe_failed` | The prompt, the whole pre-filled suggestion, Jev's raw answers and probabilities, model, token usage, latency, and a `suggestionId` |
+| `poll_created`, `poll_updated` | Everything set up in the poll: type, title, details, settings, options, times, invitee count. `poll_created` carries the `suggestionId` and `fromDescription`: which fields the person changed from what Jev filled in |
+| `poll_opened`, `poll_scheduled`, `poll_unscheduled`, `poll_closed`, `poll_duplicated`, `poll_deleted`, `invitees_added`, `export` | Lifecycle, with vote counts where relevant |
+| `vote_cast`, `vote_rejected` | The ballot, reason, voter name (not on anonymous polls), the option labels, and whether it replaced an earlier vote; for rejections, only why |
+| `mcp_initialize`, `mcp_tool` | Which agent client connected; each tool call with duration, success and the argument names (never values) |
+| `client_page_view`, `client_click`, `client_field_change`, `client_form_submit`, `client_page_leave`, `client_error` | From the browser tracker: pages, what was clicked (tag, label, link path), which field changed (label only, never what was typed), time on page, scroll depth, viewport, script errors |
+| `rate_limited`, `server_error`, `not_found` | Operational events |
+
+Every event also has a timestamp, a source (`web`, `api`, `mcp`, `browser`), the poll id and a session id. Browser sessions use a random id in a `poll_sid` cookie that the tracker sets; MCP sessions use their MCP session id. The ids are not logins and are not linked to any person.
+
+**What is never recorded:** admin, vote, invite or operator tokens (events hold poll ids, not links), IP addresses, text typed into fields, and query strings. On **anonymous polls** nothing ties a ballot to a person: `vote_cast` has the ballot but no voter name or session, and the server ignores browser events from their pages (the tracker also switches itself off there and drops its session cookie). Browsers sending Do Not Track or Global Privacy Control are not tracked in the browser; server-side events still happen, since they are the app working. Every page carries a short notice that usage is logged.
+
+**Reading it:** sign in with `/events?admin=<OPERATOR_TOKEN>` (anyone else gets a 404). The page filters by kind, kind prefix, poll, session, source, text and dates, shows counts per day and kind, expands each event's data, and downloads the same filter as JSON or CSV (`/events/export.json`, `/events/export.csv`). Agents connected as the operator use `get_usage_events`. To follow one prompt through: filter `kind=describe`, copy its `suggestionId`, then search that text.
+
+**Settings:** `EVENT_LOG=off` disables recording; `EVENT_RETENTION_DAYS` (default 365) drops older events; `EVENT_STDOUT=off` keeps rows but skips the stdout line.
+
 ## Agent Interface (MCP)
 
 Everything a person can do in the web pages, an agent can do over the [Model Context Protocol](https://modelcontextprotocol.io) at `/mcp` (Streamable HTTP, JSON responses, no SSE stream). Point any MCP client at the app's URL, for example with Claude Code:
@@ -51,6 +73,7 @@ Tools:
 | `cast_vote` | Vote or re-vote with one friendly field per method (`choice`, `selected`, `scores`, `allocations`, `ranking`, `availability`); options by label or id; returns a `voteToken` | voters / invitees |
 | `get_results` | The tally, following the poll's visibility rules | anyone allowed to see it |
 | `list_my_polls` | Polls this session created, voted in or was invited to (everything for the operator) | session |
+| `get_usage_events` | The usage log with filters and per-day counts (see Usage Log) | operator |
 | `update_draft` | Partial edit of a draft (only the fields passed change) | admin |
 | `open_poll`, `schedule_poll`, `unschedule_poll`, `close_poll` | Lifecycle; `schedule_poll` can set `opensAt` in the same call | admin |
 | `add_invitees` | Invite more people; returns their personal links | admin |

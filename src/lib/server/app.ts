@@ -4,6 +4,7 @@ import { baseConfig, defaultConfigFor, templateByType } from "../../templates";
 import { tallyPoll, validateBallot } from "../../tally";
 import { isProposalType, POLL_TYPES, type Invite, type Option, type Poll, type PollConfig, type PollType, type PublicTallyResult, type TallyResult, type Vote } from "../../types";
 import { isClosed, parseSlot } from "../shared";
+import { diffFromSuggestion, logEvent, optionLabels, pollSnapshot } from "./events";
 import { seededShuffle } from "../shuffle";
 
 let store: Store | null = null;
@@ -118,6 +119,7 @@ export function inputFromData(data: Record<string, unknown>, parsedOptions?: Arr
   if (opensAt && closesAt && opensAt >= closesAt) throw new Error("Opens at must be before closes at.");
   const invitees = config.voterMode === "invite" ? parseInvitees(stringField(data.inviteesText)) : [];
   if (config.voterMode === "invite" && invitees.length < 1) throw new Error("Invite-only polls need at least one invitee.");
+  const suggestionId = typeof data.suggestionId === "string" && /^[A-Za-z0-9_-]{6,40}$/.test(data.suggestionId) ? data.suggestionId : undefined;
   return {
     type,
     title,
@@ -126,7 +128,8 @@ export function inputFromData(data: Record<string, unknown>, parsedOptions?: Arr
     opensAt,
     closesAt,
     options,
-    invitees
+    invitees,
+    suggestionId
   };
 }
 
@@ -207,6 +210,14 @@ export function isPollAdmin(cookies: Cookies, pollId: number, urlToken = ""): bo
   return Boolean(adminCookieToken(cookies, pollId)) || (Boolean(urlToken) && getStore().verifyAdminToken(pollId, urlToken));
 }
 
+/** The operator token in a URL (`?admin=`) becomes the operator cookie, as when opening a poll with it. */
+export function grantOperatorFromUrl(cookies: Cookies, urlToken: string): boolean {
+  const operator = operatorToken();
+  if (!operator || !urlToken || !tokenMatches(hashToken(operator), urlToken)) return false;
+  cookies.set(OPERATOR_COOKIE, urlToken, TOKEN_COOKIE_OPTIONS);
+  return true;
+}
+
 /** Exchanges a `?admin=` URL token for a cookie; returns true if one was granted. */
 export function grantAdminFromUrl(cookies: Cookies, pollId: number, urlToken: string): boolean {
   if (!urlToken) return false;
@@ -227,6 +238,9 @@ export function createPollWithAdmin(input: CreatePollInput, cookies: Cookies): {
   const adminToken = crypto.randomUUID();
   const { id, slug } = getStore().createPoll({ ...input, adminToken });
   cookies.set(adminTokenCookie(id), adminToken, TOKEN_COOKIE_OPTIONS);
+  const snapshot = pollSnapshot({ ...input }, input.options, input.invitees?.length ?? 0);
+  const described = input.suggestionId ? getStore().findEvent("describe", "suggestionId", input.suggestionId) : null;
+  logEvent("poll_created", { ...snapshot, ...(input.suggestionId ? { suggestionId: input.suggestionId, fromDescription: described ? { eventId: described.id, ...diffFromSuggestion((described.data.suggestion ?? {}) as Record<string, unknown>, snapshot) } : null } : {}) }, { pollSlug: slug });
   return { id: slug, adminToken };
 }
 
@@ -376,6 +390,16 @@ export async function submitVote(poll: Poll, options: Option[], request: Request
 
 /** `submitVote` for already-parsed form-shaped data (`voterName`, `reason`, `optionId`, `score_<id>`, ...). */
 export function submitVoteData(poll: Poll, options: Option[], data: Record<string, unknown>, cookies: Cookies) {
+  try {
+    submitVoteChecked(poll, options, data, cookies);
+  } catch (error) {
+    // Why ballots bounce (final votes, missing fields...) is usage data; the ballot itself is not logged.
+    logEvent("vote_rejected", { type: poll.type, message: error instanceof Error ? error.message : String(error) }, { pollSlug: poll.slug, ...(poll.config.anonymous ? { session: "" } : {}) });
+    throw error;
+  }
+}
+
+function submitVoteChecked(poll: Poll, options: Option[], data: Record<string, unknown>, cookies: Cookies) {
   const invite = poll.config.voterMode === "invite" ? currentInvite(cookies, poll) : null;
   if (poll.config.voterMode === "invite" && !invite) throw new InviteRequiredError();
   // Anonymous open-link polls take no name: the ballot is keyed to this
@@ -388,7 +412,14 @@ export function submitVoteData(poll: Poll, options: Option[], data: Record<strin
   if (!poll.config.allowVoteChanges && token && getStore().hasVoteToken(poll.id, token) && !isPollAdmin(cookies, poll.id)) {
     throw new Error(VOTE_LOCKED_MESSAGE);
   }
+  const isUpdate = getStore().getVotes(poll.id).some((existing) => existing.voterName === vote.voterName);
   recordVote(poll, vote, cookies, invite?.token || anonymousToken);
+  // Anonymous polls: the ballot is logged, but never a name, token or session.
+  logEvent(
+    "vote_cast",
+    { type: poll.type, update: isUpdate, ballot: vote.ballot, reason: vote.reason, optionLabels: optionLabels(options), ...(poll.config.anonymous ? {} : { voterName: vote.voterName }) },
+    { pollSlug: poll.slug, ...(poll.config.anonymous ? { session: "" } : {}) }
+  );
 }
 
 /** Internal key for an anonymous ballot: stable per browser, meaningless to anyone reading it. */
@@ -424,12 +455,14 @@ export function addInviteesOrThrow(slug: string, cookies: Cookies, text: string)
   const names = parseInvitees(text);
   if (!names.length) throw new Error("Enter at least one name.");
   const added = db.addInvitees(poll.id, names, adminCookieToken(cookies, poll.id));
+  logEvent("invitees_added", { requested: names.length, added: added.length }, { pollSlug: poll.slug });
   return { poll, added };
 }
 
 /** Saves a draft edit, including its invitee list (invite links need the admin's plaintext token). */
 export function updateDraftOrThrow(poll: Poll, input: CreatePollInput, cookies: Cookies) {
   if (!getStore().updatePoll({ id: poll.id, ...input, adminToken: adminCookieToken(cookies, poll.id) })) throw new Error("Could not update draft.");
+  logEvent("poll_updated", pollSnapshot({ ...input }, input.options, input.invitees?.length ?? 0), { pollSlug: poll.slug });
 }
 
 export function openPollOrThrow(slug: string, cookies: Cookies) {
@@ -439,6 +472,7 @@ export function openPollOrThrow(slug: string, cookies: Cookies) {
   requirePollAdmin(cookies, poll.id);
   if (poll.status === "scheduled") throw new Error("This poll is scheduled to open by itself. Unschedule it to open it now.");
   if (!db.openPoll(poll.id)) throw new Error("Only draft polls can be opened.");
+  logEvent("poll_opened", { type: poll.type, title: poll.title }, { pollSlug: poll.slug });
   return poll;
 }
 
@@ -453,6 +487,7 @@ export function schedulePollOrThrow(slug: string, cookies: Cookies) {
   if (poll.opensAt <= new Date().toISOString()) throw new Error("The opening time must be in the future to schedule.");
   if (poll.closesAt && poll.opensAt >= poll.closesAt) throw new Error("Opens at must be before closes at.");
   if (!db.schedulePoll(poll.id)) throw new Error("Could not schedule this poll.");
+  logEvent("poll_scheduled", { type: poll.type, opensAt: poll.opensAt }, { pollSlug: poll.slug });
   return poll;
 }
 
@@ -463,6 +498,7 @@ export function unschedulePollOrThrow(slug: string, cookies: Cookies) {
   requirePollAdmin(cookies, poll.id);
   if (poll.status !== "scheduled") throw new Error("Only scheduled polls can be unscheduled.");
   if (!db.unschedulePoll(poll.id)) throw new Error("This poll has already opened.");
+  logEvent("poll_unscheduled", { type: poll.type }, { pollSlug: poll.slug });
   return poll;
 }
 
@@ -475,6 +511,7 @@ export function duplicatePollOrThrow(slug: string, cookies: Cookies): { id: stri
   const adminToken = crypto.randomUUID();
   const copy = db.duplicatePoll(poll.id, adminToken);
   cookies.set(adminTokenCookie(copy.id), adminToken, TOKEN_COOKIE_OPTIONS);
+  logEvent("poll_duplicated", { type: poll.type, copySlug: copy.slug }, { pollSlug: poll.slug });
   return { id: copy.slug, adminToken };
 }
 
@@ -486,6 +523,7 @@ export function closePollOrThrow(slug: string, cookies: Cookies) {
   if (poll.status === "draft") throw new Error("Open the draft before closing it.");
   if (poll.status === "scheduled") throw new Error("This poll has not opened yet. Unschedule it or delete it instead.");
   db.closePoll(poll.id);
+  logEvent("poll_closed", { type: poll.type, title: poll.title, votes: db.getVotes(poll.id).length }, { pollSlug: poll.slug });
   return poll;
 }
 
@@ -494,8 +532,10 @@ export function deletePollOrThrow(slug: string, cookies: Cookies) {
   const poll = db.getPollBySlug(slug);
   if (!poll) throw new Error("Poll not found.");
   requirePollAdmin(cookies, poll.id);
+  const votes = db.getVotes(poll.id).length;
   db.deletePoll(poll.id);
   closedTallyCache.delete(poll.id);
+  logEvent("poll_deleted", { type: poll.type, title: poll.title, status: poll.status, votes }, { pollSlug: poll.slug });
   return poll;
 }
 

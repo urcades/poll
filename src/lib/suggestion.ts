@@ -3,6 +3,8 @@ import type { PollConfig, PollType } from "../types";
 
 /** A poll pre-filled from a plain-language description (see lib/server/suggest.ts). */
 export interface Suggestion {
+  /** Random id that travels with the pre-filled form, so the usage log can link the saved poll back to this description. */
+  id: string;
   type: PollType;
   title: string;
   /** One `label | meaning` per line; null keeps the type's default options. */

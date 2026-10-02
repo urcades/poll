@@ -3,6 +3,8 @@ import { hashToken, tokenMatches } from "../../../db";
 import { OPERATOR_COOKIE } from "../app";
 import type { Bucket, RateLimitResult } from "../ratelimit";
 import { ToolError, toolByName, tools, type ToolContext } from "./tools";
+import { currentContext } from "../context";
+import { logEvent } from "../events";
 
 /**
  * A small Model Context Protocol server over Streamable HTTP (JSON responses,
@@ -165,11 +167,22 @@ function callTool(params: Record<string, unknown>, ctx: ToolContext, limit: McpR
       return { result: toolError(`Too many requests. Try again in ${result.retryAfter} seconds.`) };
     }
   }
+  const started = Date.now();
+  const context = currentContext();
+  context.tool = name;
+  // Argument names only, plus the poll's id when it is plainly one: arguments can hold admin links and tokens.
+  const poll = typeof (args as Record<string, unknown>).poll === "string" ? /(?:^|\/poll\/)([A-Za-z0-9]{10})(?=$|[/?#])/.exec((args as Record<string, string>).poll)?.[1] : undefined;
+  const record = (ok: boolean, message?: string) => logEvent("mcp_tool", { tool: name, ok, ms: Date.now() - started, argumentNames: Object.keys(args as object), ...(message ? { message } : {}) }, { pollSlug: poll });
   try {
     const output = tool.run(args as Record<string, unknown>, ctx);
+    record(true);
     return { result: { content: [{ type: "text", text: JSON.stringify(output, null, 2) }], structuredContent: output } };
   } catch (error) {
-    if (error instanceof ToolError) return { result: toolError(error.message) };
+    if (error instanceof ToolError) {
+      record(false, error.message);
+      return { result: toolError(error.message) };
+    }
+    record(false, "server error");
     console.error(`MCP tool ${name} failed`, error);
     return { result: toolError("Something went wrong on the server. Try again, or check the arguments.") };
   }
@@ -193,6 +206,8 @@ function handleMessage(message: JsonRpcMessage, ctx: McpRequestContext, state: {
   switch (message.method) {
     case "initialize": {
       const requested = typeof params.protocolVersion === "string" ? params.protocolVersion : "";
+      const client = (params.clientInfo ?? {}) as Record<string, unknown>;
+      logEvent("mcp_initialize", { client: typeof client.name === "string" ? client.name.slice(0, 80) : "", clientVersion: typeof client.version === "string" ? client.version.slice(0, 40) : "", protocolVersion: requested });
       if (!state.sessionId) {
         state.newSession = newSession();
         state.sessionId = state.newSession;

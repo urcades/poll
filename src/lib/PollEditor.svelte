@@ -43,8 +43,11 @@
     values,
     id,
     pending = $bindable(false),
-    freshDefaults = false
+    freshDefaults = false,
+    suggestionId = ""
   }: {
+    /** Set when the form was pre-filled from a description; sent back so the usage log can link the saved poll to it. */
+    suggestionId?: string;
     action?: string;
     /** New polls only: example timeslots are regenerated in the browser's own time zone. */
     freshDefaults?: boolean;
@@ -286,6 +289,9 @@
 </script>
 
 <form {id} method="post" {action} use:enhance={submit.enhance}>
+  {#if suggestionId}
+    <input type="hidden" name="suggestionId" value={suggestionId} />
+  {/if}
   <section>
     <h2>Poll type</h2>
     <label>

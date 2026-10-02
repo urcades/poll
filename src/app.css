@@ -1269,3 +1269,49 @@ table.round-log {
     corner-shape: superellipse(1.4);
   }
 }
+
+.usage-notice {
+  margin-top: var(--space-6, 3rem);
+  text-align: center;
+}
+
+/* ---------- Usage log (operator) ---------- */
+
+.filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: var(--space-3);
+}
+
+.filter-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-inline);
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+.event-list {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.event-list summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: baseline;
+  cursor: pointer;
+}
+
+.event-list pre {
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.8em;
+}

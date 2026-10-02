@@ -306,7 +306,7 @@ describe("SvelteKit app integration", () => {
       raw.close();
       store = resetStoreForTesting(path);
       expect(store.getPollBySlug(id)!.config.allowVoteChanges).toBe(true);
-      expect((store.db.query("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(5);
+      expect((store.db.query("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(6);
     });
   });
 
@@ -696,7 +696,7 @@ describe("SvelteKit app integration", () => {
     }
     expect(slugs.size).toBe(50);
     expect(db.listPolls().every((poll) => SLUG_PATTERN.test(poll.slug))).toBe(true);
-    expect(() => db.db.query("UPDATE polls SET slug = (SELECT slug FROM polls LIMIT 1) WHERE id = (SELECT MAX(id) FROM polls)").run()).toThrow();
+    expect(() => db.db.query("UPDATE polls SET slug = (SELECT slug FROM polls WHERE id = (SELECT MIN(id) FROM polls)) WHERE id = (SELECT MAX(id) FROM polls)").run()).toThrow();
     // Export filenames use the slug too.
     const { id } = await createPoll();
     await openPoll(id);

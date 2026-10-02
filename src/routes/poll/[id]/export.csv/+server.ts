@@ -1,4 +1,5 @@
 import { csvCell, exportVotes, getStore, isPollAdmin } from "$lib/server/app";
+import { logEvent } from "$lib/server/events";
 import { isClosed } from "$lib/shared";
 import type { RequestHandler } from "./$types";
 
@@ -8,6 +9,7 @@ export const GET: RequestHandler = ({ params, url, cookies }) => {
   if (!isPollAdmin(cookies, poll.id, url.searchParams.get("admin") ?? "")) return text("Only the poll admin can export results.", 403);
   if (!isClosed(poll)) return text("Exports are available only after this poll closes.", 400);
   const rows = exportVotes(poll, getStore().getVotes(poll.id));
+  logEvent("export", { format: "csv", type: poll.type, votes: rows.length }, { pollSlug: poll.slug });
   const header = ["poll_id", "poll_title", "poll_type", "voter_name", "ballot_json", "reason", "updated_at"];
   const csv = [
     header.join(","),

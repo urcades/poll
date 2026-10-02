@@ -1,5 +1,6 @@
 import { json } from "@sveltejs/kit";
 import { exportVotes, getStore, isPollAdmin, tallyFor } from "$lib/server/app";
+import { logEvent } from "$lib/server/events";
 import { isClosed } from "$lib/shared";
 import type { RequestHandler } from "./$types";
 
@@ -11,6 +12,7 @@ export const GET: RequestHandler = ({ params, url, cookies }) => {
   const options = getStore().getOptions(poll.id);
   const votes = getStore().getVotes(poll.id);
   const tally = tallyFor(poll, options, votes);
+  logEvent("export", { format: "json", type: poll.type, votes: votes.length }, { pollSlug: poll.slug });
   return new Response(JSON.stringify({
     poll,
     options,

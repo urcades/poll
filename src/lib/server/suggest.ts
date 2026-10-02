@@ -43,6 +43,8 @@ type ChoiceAnswer = { type: "choice"; choice: string; confidence: number; probab
 type NoulAnswer = { type: "noul"; noul: number };
 export interface SystemOneResponse {
   answers: Record<string, ChoiceAnswer | NoulAnswer | { type: string }>;
+  model?: string;
+  usage?: { input_tokens: number; output_tokens: number };
 }
 
 /** Sends one request to the model. Swappable so tests need no network. */
@@ -388,7 +390,7 @@ export async function suggestPoll(rawPrompt: string, ask: Ask): Promise<Suggesti
     notes.push("A reason is required with each vote");
   }
 
-  return { type, title: titleFor(prompt, before), optionsText, config, confidence, alternatives, notes };
+  return { id: crypto.randomUUID().replaceAll("-", "").slice(0, 16), type, title: titleFor(prompt, before), optionsText, config, confidence, alternatives, notes };
 }
 
 function defaultRowCount(type: PollType): number {

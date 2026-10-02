@@ -42,4 +42,4 @@
   </section>
 {/if}
 
-<PollEditor selected={selected} {values} id="poll-editor" bind:pending freshDefaults />
+<PollEditor selected={selected} {values} id="poll-editor" bind:pending freshDefaults suggestionId={suggestion?.id} />

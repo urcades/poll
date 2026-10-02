@@ -17,6 +17,7 @@ import {
   InviteRequiredError,
   invitationsFor,
   involvedPolls,
+  isOperator,
   isPollAdmin,
   openPollOrThrow,
   publicTally,
@@ -30,6 +31,7 @@ import {
   voteTokenCookie,
   voterNameCookie
 } from "../app";
+import { filterFromInput, readEvents } from "../events";
 import { defaultConfigFor, templateByType, templates } from "../../../templates";
 import { isProposalType, POLL_TYPES, type Option, type Poll, type PollConfig, type Vote } from "../../../types";
 import { formatSlot, isClosed, isOpen, parseSlot } from "../../shared";
@@ -820,6 +822,40 @@ export const tools: ToolDefinition[] = [
         drafts: items.filter((item) => item.status === "draft" || item.status === "scheduled"),
         active: items.filter((item) => item.status === "open"),
         closed: items.filter((item) => item.status === "closed")
+      };
+    }
+  },
+  {
+    name: "get_usage_events",
+    title: "Read the usage log",
+    description: "Instance operator only (connect with the operator token as the bearer token). The usage log, newest first: descriptions sent to Jev with the model's answers, polls created, changed, opened and closed (linked to the description they came from through suggestionId), votes cast (anonymous polls without any voter or session), agent tool calls, exports, and browser page views and clicks. Filter by kind or kindPrefix (describe, poll_, vote_, mcp_, client_), poll id, session, source, text and time; page with `before`. Also returns counts per day and kind.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        kind: { type: "string", description: "One event kind, e.g. describe, poll_created, vote_cast, mcp_tool, client_click." },
+        kindPrefix: { type: "string", description: "Kinds starting with this, e.g. \"poll_\" or \"client_\"." },
+        poll: { type: "string", description: "A poll id (slug) to follow one poll through its life." },
+        session: { type: "string", description: "A browser or MCP session id from an earlier event." },
+        source: { type: "string", enum: ["web", "api", "mcp", "browser", "internal"] },
+        text: { type: "string", description: "Substring to find in the event's data (prompts, titles, paths...)." },
+        since: { type: "string", description: "ISO date or time; events at or after." },
+        until: { type: "string", description: "ISO date or time; events before." },
+        before: { type: "integer", description: "Only events with an id below this: the `next` value of the previous page." },
+        limit: { type: "integer", description: "Events per page, 1 to 500 (default 100)." }
+      },
+      additionalProperties: false
+    },
+    annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+    run(args, ctx) {
+      if (!isOperator(ctx.jar)) throw new ToolError("Only the instance operator can read the usage log. Connect with the operator token as the bearer token.");
+      const filter = filterFromInput((key) => args[key]);
+      const limit = Math.min(filter.limit ?? 100, 500);
+      const rows = readEvents({ ...filter, limit: limit + 1 });
+      const events = rows.slice(0, limit);
+      return {
+        events,
+        next: rows.length > limit ? (events[events.length - 1]?.id ?? null) : null,
+        summary: getStore().eventSummary({ ...filter, before: undefined })
       };
     }
   },

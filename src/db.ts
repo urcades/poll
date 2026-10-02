@@ -200,6 +200,8 @@ export interface CreatePollInput {
   adminToken?: string;
   /** Invitee names for `voterMode: "invite"` (already trimmed and de-duplicated). Ignored in open mode. */
   invitees?: string[];
+  /** Which description (see lib/server/suggest.ts) this poll was pre-filled from; used only by the usage log. */
+  suggestionId?: string;
 }
 
 export interface UpdatePollInput extends CreatePollInput {
@@ -356,8 +358,56 @@ const MIGRATIONS: Migration[] = [
         WHERE json_extract(config_json, '$.allowVoteChanges') IS NULL;
       `);
     }
+  },
+  {
+    // Usage log: one row per event (see lib/server/events.ts). No foreign
+    // keys: events outlive the polls they describe, so polls are named by slug.
+    version: 6,
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS events (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          ts TEXT NOT NULL,
+          kind TEXT NOT NULL,
+          source TEXT NOT NULL,
+          poll_slug TEXT NOT NULL DEFAULT '',
+          session TEXT NOT NULL DEFAULT '',
+          data_json TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS events_ts ON events (ts);
+        CREATE INDEX IF NOT EXISTS events_kind ON events (kind, ts);
+        CREATE INDEX IF NOT EXISTS events_poll ON events (poll_slug, ts);
+        CREATE INDEX IF NOT EXISTS events_session ON events (session, ts);
+      `);
+    }
   }
 ];
+
+export interface EventRow {
+  id: number;
+  ts: string;
+  kind: string;
+  source: string;
+  pollSlug: string;
+  session: string;
+  data: Record<string, unknown>;
+}
+
+export interface EventFilter {
+  kind?: string;
+  /** Matches kinds starting with this (for example "poll_" or "client_"). */
+  kindPrefix?: string;
+  pollSlug?: string;
+  session?: string;
+  source?: string;
+  since?: string;
+  until?: string;
+  /** Substring search over the event's data (prompts, titles, paths...). */
+  text?: string;
+  /** Only events with an id below this (for paging newest-first). */
+  before?: number;
+  limit?: number;
+}
 
 export class Store {
   db: SqliteDatabase;
@@ -432,6 +482,57 @@ export class Store {
    * passed become open (opened_at = opens_at), then open polls that were
    * manually closed or whose `closes_at` has passed become closed.
    */
+  // ---- Usage events (lib/server/events.ts decides what to record) ----
+
+  insertEvent(event: { ts: string; kind: string; source: string; pollSlug: string; session: string; data: unknown }): number {
+    const result = this.db.query("INSERT INTO events (ts, kind, source, poll_slug, session, data_json) VALUES (?, ?, ?, ?, ?, ?)").run(event.ts, event.kind, event.source, event.pollSlug, event.session, JSON.stringify(event.data));
+    return Number(result.lastInsertRowid);
+  }
+
+  private eventWhere(filter: EventFilter): { sql: string; params: unknown[] } {
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+    const add = (clause: string, value: unknown) => {
+      clauses.push(clause);
+      params.push(value);
+    };
+    const like = (text: string) => `%${text.replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
+    if (filter.kind) add("kind = ?", filter.kind);
+    if (filter.kindPrefix) add("kind LIKE ? ESCAPE '\\'", `${like(filter.kindPrefix).slice(1, -1)}%`);
+    if (filter.pollSlug) add("poll_slug = ?", filter.pollSlug);
+    if (filter.session) add("session = ?", filter.session);
+    if (filter.source) add("source = ?", filter.source);
+    if (filter.since) add("ts >= ?", filter.since);
+    if (filter.until) add("ts < ?", filter.until);
+    if (filter.before) add("id < ?", filter.before);
+    if (filter.text) add("data_json LIKE ? ESCAPE '\\'", like(filter.text));
+    return { sql: clauses.length ? `WHERE ${clauses.join(" AND ")}` : "", params };
+  }
+
+  /** Newest first. */
+  listEvents(filter: EventFilter = {}): EventRow[] {
+    const { sql, params } = this.eventWhere(filter);
+    const limit = Math.min(Math.max(Math.trunc(filter.limit ?? 100), 1), 5000);
+    const rows = this.db.query(`SELECT id, ts, kind, source, poll_slug, session, data_json FROM events ${sql} ORDER BY id DESC LIMIT ?`).all(...params, limit) as Array<{ id: number; ts: string; kind: string; source: string; poll_slug: string; session: string; data_json: string }>;
+    return rows.map((row) => ({ id: row.id, ts: row.ts, kind: row.kind, source: row.source, pollSlug: row.poll_slug, session: row.session, data: JSON.parse(row.data_json) as Record<string, unknown> }));
+  }
+
+  /** Counts per kind and day, for the overview. */
+  eventSummary(filter: EventFilter = {}): Array<{ day: string; kind: string; count: number }> {
+    const { sql, params } = this.eventWhere({ ...filter, before: undefined });
+    return this.db.query(`SELECT substr(ts, 1, 10) AS day, kind, COUNT(*) AS count FROM events ${sql} GROUP BY day, kind ORDER BY day DESC, count DESC`).all(...params) as Array<{ day: string; kind: string; count: number }>;
+  }
+
+  /** The newest event of a kind whose data has `field` equal to `value` (for example a describe by its suggestionId). */
+  findEvent(kind: string, field: string, value: string): EventRow | null {
+    const row = this.db.query("SELECT id, ts, kind, source, poll_slug, session, data_json FROM events WHERE kind = ? AND json_extract(data_json, ?) = ? ORDER BY id DESC LIMIT 1").get(kind, `$.${field}`, value) as { id: number; ts: string; kind: string; source: string; poll_slug: string; session: string; data_json: string } | null;
+    return row ? { id: row.id, ts: row.ts, kind: row.kind, source: row.source, pollSlug: row.poll_slug, session: row.session, data: JSON.parse(row.data_json) as Record<string, unknown> } : null;
+  }
+
+  pruneEvents(olderThanIso: string): number {
+    return this.db.query("DELETE FROM events WHERE ts < ?").run(olderThanIso).changes;
+  }
+
   sweepSchedule() {
     const now = new Date().toISOString();
     const opening = this.db.query("SELECT EXISTS(SELECT 1 FROM polls WHERE status = 'scheduled' AND opens_at IS NOT NULL AND opens_at <= ?) AS due").get(now) as { due: number };
