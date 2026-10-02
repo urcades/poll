@@ -109,12 +109,12 @@ async function setOptions(page: Page, labels: string[]) {
 
 /**
  * Page actions live in the header: the primary button, plus secondary actions
- * shown inline on wide screens or inside the "More" menu on narrow ones.
+ * inside the "Poll options" dropdown.
  */
 export async function pageAction(page: Page, role: "button" | "link", name: string | RegExp): Promise<Locator> {
   const target = page.getByRole(role, { name });
   if (!(await target.isVisible())) {
-    const more = page.locator(".page-header summary", { hasText: "More" });
+    const more = page.locator(".page-header summary", { hasText: "Poll options" });
     if (await more.isVisible()) await more.click();
   }
   await target.waitFor();

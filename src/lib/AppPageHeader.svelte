@@ -10,14 +10,16 @@
     backLabel?: string;
     /** The page's one primary action, shown in the header's right corner. */
     primary?: Primary | null;
-    /** Secondary actions: inline on wide screens, in a "More" menu otherwise. */
+    /** Secondary actions, listed in a dropdown beside the primary action. */
     actions?: Snippet;
+    /** The dropdown's label. */
+    actionsLabel?: string;
   };
 
-  let { title, backHref, backLabel = "Back", primary, actions }: Props = $props();
+  let { title, backHref, backLabel = "Back", primary, actions, actionsLabel = "Poll options" }: Props = $props();
 </script>
 
-<header class="page-header" class:has-actions={Boolean(actions)} aria-label={title ? `${title} page header` : "Page header"}>
+<header class="page-header" aria-label={title ? `${title} page header` : "Page header"}>
   <div class="page-header-start">
     {#if backHref}
       <a class="page-header-back" href={backHref} aria-label={backLabel}><span aria-hidden="true">←</span> Back</a>
@@ -28,8 +30,7 @@
   {/if}
   <div class="page-header-end">
     {#if actions}
-      <div class="header-actions">{@render actions()}</div>
-      <div class="header-actions-menu"><OverflowMenu>{@render actions()}</OverflowMenu></div>
+      <OverflowMenu label={actionsLabel}>{@render actions()}</OverflowMenu>
     {/if}
     {#if primary}
       <PrimaryAction {...primary} />
@@ -84,32 +85,6 @@
 
   .page-header-back:hover {
     text-decoration: underline;
-  }
-
-  .header-actions {
-    display: none;
-    gap: var(--gap-inline);
-    align-items: center;
-  }
-
-  .header-actions :global(form) {
-    display: contents;
-  }
-
-  /* Wide screens have room for secondary actions beside a centered title;
-     reserve enough on each side for them before the title truncates. */
-  @media (min-width: 70rem) {
-    .page-header.has-actions {
-      --header-side: 30rem;
-    }
-
-    .header-actions {
-      display: flex;
-    }
-
-    .header-actions-menu {
-      display: none;
-    }
   }
 
   /* Phones: controls on the first row, the full title centered below. */
