@@ -57,6 +57,10 @@ body {
   --space-4: 1em;
   --space-5: 1.5em;
   --space-6: 3em;
+  /* Card padding: section cards, then the cards inside them (x = sides, y = top and bottom). */
+  --pad-section: 1.75em;
+  --pad-card-x: 1.25em;
+  --pad-card-y: 1em;
   /* The one gap between controls sitting side by side (buttons, fields). */
   --gap-inline: var(--space-1);
   --content-width: 66ch;
@@ -108,7 +112,7 @@ body > div > :not(.page-header, .header-scrim) + * {
 
 /* Sections get the site's generous 3em lead-in above their heading. */
 body > div > :not(.page-header, .header-scrim) + :is(section, form) {
-  margin-top: var(--space-5);
+  margin-top: var(--pad-section);
 }
 
 /* Each major section of a page (and of the poll editor) sits in its own
@@ -117,20 +121,20 @@ body > div > :not(.page-header, .header-scrim) + :is(section, form) {
    open as the page heading; Manage poll keeps its dotted callout outline. */
 body > div > section:not(.poll-intro, .callout),
 form:has(> section) > :is(section, .form-details) {
-  padding: var(--space-5);
+  padding: var(--pad-section);
   border: 1px solid var(--rule);
   border-radius: var(--radius-section);
 }
 
 body > div > section.callout {
   gap: var(--space-4);
-  padding: var(--space-5);
+  padding: var(--pad-section);
 }
 
 @media (max-width: 640px) {
   body > div > section:not(.poll-intro),
   form:has(> section) > :is(section, .form-details) {
-    padding: var(--space-4);
+    padding: var(--pad-card-x);
   }
 }
 
@@ -268,7 +272,7 @@ form {
 
 /* A form made of sections (the poll editor) keeps the page's section rhythm. */
 form:has(> section) {
-  gap: var(--space-5);
+  gap: var(--pad-section);
 }
 
 fieldset,
@@ -635,7 +639,7 @@ details[open] > summary {
 .callout {
   --callout-dots: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='1' y='1' rx='19' ry='19' style='width:calc(100%25 - 2px);height:calc(100%25 - 2px)' fill='none' stroke='%231b1b1b' stroke-width='1.5' stroke-linecap='round' stroke-dasharray='0 6'/%3E%3C/svg%3E");
   gap: var(--space-2);
-  padding: var(--space-4);
+  padding: var(--pad-card-x);
   background: var(--callout-dots) no-repeat;
 }
 
@@ -682,7 +686,7 @@ body > div > section.callout {
 }
 
 [role="alert"] {
-  padding: var(--space-3) var(--space-4);
+  padding: var(--pad-card-y) var(--pad-card-x);
   color: var(--error);
   background-color: color-mix(in lab, var(--error) 12%, transparent);
 }
@@ -717,7 +721,7 @@ body > div > section.callout {
   position: relative;
   display: grid;
   gap: var(--space-1);
-  padding: var(--space-4);
+  padding: var(--pad-card-x);
 }
 
 .card h3 {
@@ -786,7 +790,7 @@ table {
 
 th,
 td {
-  padding: var(--space-3) var(--space-4);
+  padding: var(--pad-card-y) var(--pad-card-x);
   text-align: left;
   vertical-align: top;
 }
@@ -826,7 +830,7 @@ table.round-log {
   align-items: center;
   /* Right padding equals the bottom, so the button cluster sits square in
      the corner; the left keeps the handle's wider, balanced inset. */
-  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
+  padding: var(--pad-card-y) var(--pad-card-y) var(--pad-card-y) var(--pad-card-x);
 }
 
 .option-block {
@@ -870,7 +874,7 @@ table.round-log {
 /* Fixed proposal positions: one grained card, a hairline between rows. */
 .fixed-positions {
   margin: 0;
-  padding: var(--space-1) var(--space-4);
+  padding: var(--space-1) var(--pad-card-x);
   list-style: none;
   border-radius: var(--radius-card);
   background-color: var(--tint);
@@ -881,7 +885,7 @@ table.round-log {
   display: grid;
   gap: 0.1em;
   margin: 0;
-  padding: var(--space-3) 0;
+  padding: var(--pad-card-y) 0;
 }
 
 .fixed-positions > li + li {
@@ -892,7 +896,7 @@ table.round-log {
    (with the inline gap) the same amount before the fields. Divided by the
    glyph's 1.2 scale so the ems resolve at the card's text size. */
 .drag-handle {
-  margin-inline-end: calc((var(--space-4) - var(--gap-inline)) / 1.2);
+  margin-inline-end: calc((var(--pad-card-x) - var(--gap-inline)) / 1.2);
   /* The handle takes touch drags itself instead of scrolling the page. */
   touch-action: none;
   color: var(--muted);
@@ -918,7 +922,7 @@ table.round-log {
 
 .option-actions {
   align-self: end;
-  margin-inline-start: calc(var(--space-3) - var(--gap-inline));
+  margin-inline-start: calc(var(--pad-card-y) - var(--gap-inline));
   display: flex;
   gap: var(--gap-inline);
   flex-wrap: wrap;
@@ -952,7 +956,7 @@ table.round-log {
 
   /* Stacked, the fields span the card, so keep its sides even. */
   .option-block {
-    padding-inline-end: var(--space-4);
+    padding-inline-end: var(--pad-card-x);
   }
 
   .option-actions {
@@ -992,7 +996,7 @@ table.round-log {
 .rank-list {
   min-height: 3em;
   margin: 0;
-  padding: var(--space-2);
+  padding: var(--space-3);
   list-style: none;
   border: 1px dashed var(--rule);
   border-radius: var(--radius-card);
