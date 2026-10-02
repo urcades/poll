@@ -1,6 +1,9 @@
 <script lang="ts">
+  import { enhance } from "$app/forms";
+  import { goto } from "$app/navigation";
   import { resolve } from "$app/paths";
   import { page } from "$app/state";
+  import type { SubmitFunction } from "@sveltejs/kit";
   import AppPageHeader from "$lib/AppPageHeader.svelte";
   import LocalTime from "$lib/LocalTime.svelte";
   import MetaTags from "$lib/MetaTags.svelte";
@@ -9,7 +12,22 @@
   import type { Poll } from "../types";
 
   type Item = { poll: Poll; role: "admin" | "voter" | "invitee" | null };
-  let { data }: PageProps = $props();
+  let { data, form }: PageProps = $props();
+  let describing = $state(false);
+
+  // The description goes to the server, which returns a pre-filled poll; the
+  // editor opens with it (in navigation state, so the text never lands in a URL).
+  const describe: SubmitFunction = () => {
+    describing = true;
+    return async ({ result, update }) => {
+      describing = false;
+      if (result.type === "success" && result.data?.suggestion) {
+        await goto(resolve("/new"), { state: { suggestion: result.data.suggestion } });
+      } else {
+        await update({ reset: false });
+      }
+    };
+  };
   const meta = $derived({
     title: "Poll",
     description: "Private votes and proposals, shared by link.",
@@ -29,9 +47,24 @@
 
 <!-- Describe a vote in plain words; this is where the prompt is interpreted and
      routed to a pre-filled poll. The field is in place; the interpretation isn't wired yet. -->
-<form class="prompt-field" onsubmit={(event) => event.preventDefault()}>
+<form class="prompt-field" method="post" action="?/suggest" use:enhance={describe}>
   <label class="sr-only" for="poll-prompt">Describe a vote or proposal</label>
-  <input id="poll-prompt" name="prompt" type="text" autocomplete="off" maxlength="2000" placeholder="Describe a vote or proposal…" />
+  <input
+    id="poll-prompt"
+    name="prompt"
+    type="text"
+    autocomplete="off"
+    maxlength="2000"
+    required
+    disabled={!data.canDescribe || describing}
+    placeholder={data.canDescribe ? (describing ? "Reading your description…" : "Describe a vote or proposal…") : "Describing a vote in words isn't set up on this server"}
+  />
+  {#if data.canDescribe}
+    <p class="prompt-note hint">Press Enter. Your description is sent to TypeSafe to pick a voting method and fill in the form; nothing is created until you save.</p>
+  {/if}
+  {#if form?.error}
+    <p role="alert">{form.error}</p>
+  {/if}
 </form>
 
 {#if isEmpty}

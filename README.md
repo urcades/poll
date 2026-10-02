@@ -25,6 +25,14 @@ This project started as a local exploration of Loomio-style poll creation and la
 - Link previews: poll pages, the results page and the home page carry Open Graph and Twitter card tags (title, a shortened description or "<type> - <status>", the clean `/poll/<slug>` URL from the request origin, and a generic `static/og.png` 1200x630 image). Tags are built from public poll fields only, never admin or invite tokens or voter data. Poll pages also send `<meta name="robots" content="noindex">` since polls are private by link. Behind a proxy, make sure `ORIGIN` (or the forwarded host headers your adapter trusts) reflect the public URL so absolute links are right.
 - A SvelteKit frontend styled with `@flowercomputer/flowerparts`.
 
+## Describe A Vote In Words
+
+The home page has a text field: type what you want decided ("Which two films Friday: Past Lives, Perfect Days or Poor Things?", "Elect 2 organizers from Ada, Ben, Chen, Diana and Eli, anonymous") and the new-poll editor opens already filled in. Nothing is created until you save; the editor shows what was filled in and which other voting methods were close.
+
+How it works: code finds the candidate options (bullet lines, a list after a colon or "between/from", or a list in the closing sentence), the numbers, and the title. One request to [TypeSafe](https://typesafe.ai)'s Jev model then makes only the judgment calls, as closed questions it answers with choices and probabilities rather than free text: which of the 12 voting methods fits, which settings the wording asks for (anonymous, voters may change their vote, a reason is required), what each number means (seats, pick limit, point budget, top score, ranked choices, meeting minutes or hours, option count), and which candidate items are real options. An answer must be at least 70% sure to change the form, and every filled value is checked against what the editor allows (for example seats must be fewer than the candidates). Time-poll slots are not read from the text; the editor offers upcoming ones. Responses take well under a second.
+
+Set `TYPESAFE_API_KEY` on the server (`.env` locally, see `.env.example`; `fly secrets set TYPESAFE_API_KEY=...` on Fly). Without it the field is shown disabled with a note. The key stays on the server, the description is sent only to `api.typesafe.ai`, and it travels to the editor in browser navigation state, never in a URL. Each description counts against the creation rate limit. Agents do not need this: over MCP they choose the method and fill the settings themselves (`list_poll_types`, `create_poll`).
+
 ## Agent Interface (MCP)
 
 Everything a person can do in the web pages, an agent can do over the [Model Context Protocol](https://modelcontextprotocol.io) at `/mcp` (Streamable HTTP, JSON responses, no SSE stream). Point any MCP client at the app's URL, for example with Claude Code:
@@ -169,6 +177,8 @@ fly scale count 1
 ```
 
 The database lives at `/data/votes.sqlite` on the volume. `auto_stop_machines` is enabled; cold starts are a few seconds and the data survives them.
+
+To turn on [describing a vote in words](#describe-a-vote-in-words), set the key as a secret before deploying: `fly secrets set TYPESAFE_API_KEY=<your key>`.
 
 ### Backups With Litestream
 

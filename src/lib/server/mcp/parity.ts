@@ -15,6 +15,7 @@ export type Counterpart = { tools: string[] } | { excluded: string };
 export const HUMAN_CAPABILITIES: Record<string, Counterpart> = {
   // Pages people read
   "+page.server.ts#load": { tools: ["list_my_polls"] },
+  "+page.server.ts#suggest": { excluded: "Turns a person's plain-language description into a pre-filled editor. An agent already picks the method and fills the settings itself, using list_poll_types and create_poll." },
   "new/+page.server.ts#load": { tools: ["list_poll_types"] },
   "poll/[id]/+page.server.ts#load": { tools: ["get_poll"] },
   "poll/[id]/edit/+page.server.ts#load": { tools: ["get_poll"] },

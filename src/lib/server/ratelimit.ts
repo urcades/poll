@@ -99,6 +99,8 @@ export function classifyRequest(method: string, pathname: string, search = ""): 
   // MCP requests are limited per tool call by the MCP handler itself (reads are free, creations use "create").
   if (path === "/mcp") return null;
   if (path === "/api/polls" || path === "/new") return "create";
+  // Each description is a paid model call, so it shares the creation budget.
+  if (path === "/" && search === "?/suggest") return "create";
   // Duplicating mints a new poll, so it shares the creation budget.
   if (/^\/api\/polls\/[^/]+\/duplicate$/.test(path) || (/^\/poll\/[^/]+$/.test(path) && search === "?/duplicate")) return "create";
   return "mutate";

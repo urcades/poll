@@ -612,6 +612,16 @@ details[open] > summary {
 
 /* The home page's prompt field: one bare input across the whole body width. */
 .prompt-field {
+  display: grid;
+  gap: var(--space-2);
+}
+
+/* The privacy note shows while the field is in use. */
+.prompt-note {
+  display: none;
+}
+
+.prompt-field:focus-within .prompt-note {
   display: block;
 }
 
