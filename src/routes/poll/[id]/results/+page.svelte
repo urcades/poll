@@ -29,6 +29,5 @@
 </section>
 
 <section>
-  <h2>Results</h2>
   <PollResults tally={data.tally} poll={data.poll} />
 </section>

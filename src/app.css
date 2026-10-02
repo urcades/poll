@@ -606,6 +606,25 @@ details[open] > summary {
 
 /* ---------- Poll pages ---------- */
 
+/* "Results: <outcome>" on the left, the quorum note pushed to the right. */
+.results-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-2);
+  row-gap: var(--space-1);
+}
+
+.results-colon {
+  margin-inline-start: calc(-1 * var(--space-2));
+  color: var(--muted);
+}
+
+.results-quorum {
+  margin-inline-start: auto;
+  text-align: right;
+}
+
 /* Title, status line, and description, read as one block. */
 .poll-intro {
   gap: var(--space-2);

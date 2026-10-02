@@ -224,7 +224,6 @@
     {/if}
   </section>
   <section>
-    <h2>Results</h2>
     <PollResults tally={data.showResults ? data.tally : null} poll={data.poll} />
   </section>
 {/if}

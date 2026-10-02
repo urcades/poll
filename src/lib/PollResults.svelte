@@ -6,8 +6,8 @@
   import type { Poll, PublicTallyResult } from "../types";
   import { resultCells, resultHeaders, roundTallies } from "$lib/shared";
 
-  // The outcome, quorum, charts and tables for one poll. `tally` is null when
-  // the viewer may not see results yet (the server never sends them then).
+  // The heading, outcome, quorum, charts and tables for one poll. `tally` is
+  // null when the viewer may not see results yet (the server never sends them then).
   let { tally, poll }: { tally: PublicTallyResult | null; poll: Poll } = $props();
 
   const minutes = $derived(poll.config.meetingDurationMinutes ?? 60);
@@ -15,12 +15,14 @@
 </script>
 
 {#if tally}
-  <p>
-    <strong>
+  <!-- One row: "Results: <outcome>" on the left, the quorum note pushed to the right edge. -->
+  <div class="results-head">
+    <h2>Results</h2><span class="results-colon" aria-hidden="true">:</span>
+    <strong class="results-outcome">
       {#if bestSlot}Best timeslot: <LocalTime value={bestSlot} {minutes} />{:else}{tally.outcome}{/if}
     </strong>
-  </p>
-  <p>{tally.quorumText}{tally.quorumMet === null ? "" : tally.quorumMet ? " · quorum met" : " · quorum not met"}</p>
+    <span class="results-quorum">{tally.quorumText}{tally.quorumMet === null ? "" : tally.quorumMet ? " · quorum met" : " · quorum not met"}</span>
+  </div>
   {#if tally.quota}
     <p>Quota: {formatNumber(tally.quota)}</p>
   {/if}
@@ -100,7 +102,9 @@
     </details>
   {/if}
 {:else if poll.config.hideResults === "after_vote"}
+  <h2>Results</h2>
   <p>Results are hidden until you vote. They appear here once this browser has voted.</p>
 {:else}
+  <h2>Results</h2>
   <p>Results are hidden until this poll closes.</p>
 {/if}
