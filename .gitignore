@@ -27,3 +27,4 @@ playwright-report/
 
 # Cloudflare local state
 .wrangler/
+.cloudflare/

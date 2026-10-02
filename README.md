@@ -204,7 +204,7 @@ npx wrangler secret put OPERATOR_TOKEN   # optional
 npx wrangler deploy
 ```
 
-Deploy with Wrangler: the `cf` CLI (v1.0.0-beta) does not support SvelteKit projects yet. Without a `routes` or custom domain the Worker is served at `poll.<your-subdomain>.workers.dev`. The Node build (`bun run build`, Docker, Fly) is unchanged and remains the default.
+Or deploy with the `cf` CLI, which can't build SvelteKit projects itself (v1.0.0-beta): `npm run cf:package` builds the app, bundles the Worker with Wrangler without deploying, and writes it in cf's prebuilt format (`.cloudflare/output`); then `cf deploy --prebuilt --secrets-file .env` deploys it to the account cf is signed in to. Without a `routes` or custom domain the Worker is served at `poll.<your-subdomain>.workers.dev`. The Node build (`bun run build`, Docker, Fly) is unchanged and remains the default.
 
 ## Useful Commands
 
