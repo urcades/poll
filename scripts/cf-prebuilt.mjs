@@ -33,7 +33,9 @@ const worker = config.defineWorker({
   exports: { PollApp: config.exports.durableObject({ storage: "sqlite" }) },
   env: {
     APP: config.bindings.durableObject({ worker: "poll", exportName: "PollApp" }),
-    ASSETS: config.bindings.assets()
+    ASSETS: config.bindings.assets(),
+    // Clef, for describing a vote in words.
+    AI: config.bindings.ai()
   },
   observability: { enabled: true }
 });

@@ -3,7 +3,7 @@ import { isOperator } from "$lib/server/app";
 import { correctionRows, correctionStats, type Outcome } from "$lib/server/corrections";
 import type { PageServerLoad } from "./$types";
 
-/** How Jev's readings fare against what people save (operator only). */
+/** How the model's readings fare against what people save (operator only). */
 export const load = (({ url, cookies }) => {
   if (!isOperator(cookies)) error(404, "Not found");
   const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 300, 1), 2000);

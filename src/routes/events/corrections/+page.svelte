@@ -11,15 +11,15 @@
 </script>
 
 <svelte:head>
-  <title>Jev corrections</title>
+  <title>Model corrections</title>
   <meta name="robots" content="noindex" />
 </svelte:head>
 
-<AppPageHeader title="Jev corrections" backHref="/events" backLabel="Back to usage log" />
+<AppPageHeader title="Model corrections" backHref="/events" backLabel="Back to usage log" />
 
 <section>
   <h2>Outcomes</h2>
-  <p class="hint">{data.stats.descriptions} descriptions. Of the polls people saved, {percent(data.stats.acceptedShare)} were kept exactly as Jev filled them in.</p>
+  <p class="hint">{data.stats.descriptions} descriptions. Of the polls people saved, {percent(data.stats.acceptedShare)} were kept exactly as the model filled them in.</p>
   <div class="table-scroll">
     <table>
       <thead><tr>{#each outcomes as outcome (outcome)}<th><a href="?{params ? `${params}&` : ''}outcome={outcome}">{outcome}</a></th>{/each}</tr></thead>
@@ -37,7 +37,7 @@
   {#if data.stats.fieldCorrections.length}
     <div class="table-scroll">
       <table>
-        <thead><tr><th>Field</th><th>Corrected</th><th>Share of saved polls</th><th>Jev missed it</th></tr></thead>
+        <thead><tr><th>Field</th><th>Corrected</th><th>Share of saved polls</th><th>Model missed it</th></tr></thead>
         <tbody>
           {#each data.stats.fieldCorrections as row (row.field)}
             <tr><th scope="row">{row.field}</th><td>{row.count}</td><td>{percent(row.share)}</td><td>{row.missed || ""}</td></tr>
@@ -45,24 +45,34 @@
         </tbody>
       </table>
     </div>
-    <p class="hint">"Jev missed it" counts settings Jev left at the default that the person then changed, for example making a poll anonymous when the prompt said so.</p>
+    <p class="hint">"Model missed it" counts settings the model left at the default that the person then changed, for example making a poll anonymous when the prompt said so.</p>
   {:else}
     <p class="hint">No corrections yet.</p>
   {/if}
 </section>
 
 <section>
-  <h2>Voting method: Jev versus saved</h2>
+  <h2>Models</h2>
   <div class="table-scroll">
     <table>
-      <thead><tr><th>Jev's confidence</th><th>Saved polls</th><th>Method kept</th></tr></thead>
+      <thead><tr><th>Model</th><th>Descriptions</th><th>Saved</th><th>Kept as filled</th><th>Method kept</th><th>Mean confidence</th></tr></thead>
+      <tbody>{#each data.stats.providers as row (row.provider)}<tr><th scope="row">{row.provider}</th><td>{row.descriptions}</td><td>{row.saved}</td><td>{percent(row.acceptedShare)}</td><td>{percent(row.typeKeptShare)}</td><td>{percent(row.meanConfidence)}</td></tr>{/each}</tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>Voting method: model versus saved</h2>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>Model's confidence</th><th>Saved polls</th><th>Method kept</th></tr></thead>
       <tbody>{#each data.stats.calibration as row (row.bucket)}<tr><th scope="row">{row.bucket}</th><td>{row.saved}</td><td>{percent(row.typeKeptShare)}</td></tr>{/each}</tbody>
     </table>
   </div>
   {#if data.stats.typeConfusions.length}
     <div class="table-scroll">
       <table>
-        <thead><tr><th>Jev said</th><th>They chose</th><th>Times</th></tr></thead>
+        <thead><tr><th>Model said</th><th>They chose</th><th>Times</th></tr></thead>
         <tbody>{#each data.stats.typeConfusions as row (`${row.jev}>${row.final}`)}<tr><td>{row.jev}</td><td>{row.final}</td><td>{row.count}</td></tr>{/each}</tbody>
       </table>
     </div>
@@ -80,11 +90,11 @@
             <strong>{row.outcome}</strong>
             <span>{row.prompt.length > 90 ? `${row.prompt.slice(0, 90)}…` : row.prompt}</span>
           </summary>
-          <p>Jev: <strong>{row.jev.type}</strong> ({percent(row.jev.confidence)}){row.final && row.final.type !== row.jev.type ? ` → saved as ${row.final.type}` : ""}{row.pickedAlternative ? " (a method Jev listed as close)" : ""}</p>
+          <p>{row.provider}: <strong>{row.jev.type}</strong> ({percent(row.jev.confidence)}){row.final && row.final.type !== row.jev.type ? ` → saved as ${row.final.type}` : ""}{row.pickedAlternative ? " (a method the model listed as close)" : ""}</p>
           {#if row.changes.length}
             <ul>
               {#each row.changes as change (change.field)}
-                <li><strong>{change.field}</strong>: Jev {show(change.jev)} → {show(change.final)}{change.jevSet === false ? " (Jev left it at the default)" : ""}</li>
+                <li><strong>{change.field}</strong>: model {show(change.jev)} → {show(change.final)}{change.jevSet === false ? " (model left it at the default)" : ""}</li>
               {/each}
             </ul>
           {/if}

@@ -27,6 +27,8 @@ export interface CorrectionRow {
   session: string;
   suggestionId: string;
   prompt: string;
+  /** Which model read it: "clef", "jev" (also what events logged before models were recorded are assumed to be). */
+  provider: string;
   jev: SuggestionLike & { confidence: number; alternatives: Array<{ type: string; percent: number }>; probabilities: Record<string, number> | null };
   outcome: Outcome;
   pollSlug: string;
@@ -98,6 +100,7 @@ export function correctionRows(options: { since?: string; until?: string; limit?
       session: describe.session,
       suggestionId,
       prompt: String(describe.data.prompt ?? ""),
+      provider: String(describe.data.provider ?? "jev"),
       jev,
       outcome,
       pollSlug: created?.pollSlug ?? "",
@@ -122,6 +125,8 @@ export interface CorrectionStats {
   typeConfusions: Array<{ jev: string; final: string; count: number }>;
   /** Did the method Jev picked survive, by how sure Jev was? */
   calibration: Array<{ bucket: string; saved: number; typeKept: number; typeKeptShare: number | null }>;
+  /** The same headline numbers per model, to compare them. */
+  providers: Array<{ provider: string; descriptions: number; saved: number; acceptedShare: number | null; typeKeptShare: number | null; meanConfidence: number | null }>;
 }
 
 export function correctionStats(rows: CorrectionRow[]): CorrectionStats {
@@ -158,6 +163,18 @@ export function correctionStats(rows: CorrectionRow[]): CorrectionStats {
     typeConfusions: [...confusions]
       .map(([key, count]) => ({ jev: key.split("\u0000")[0]!, final: key.split("\u0000")[1]!, count }))
       .sort((a, b) => b.count - a.count),
+    providers: [...new Set(rows.map((row) => row.provider))].sort().map((provider) => {
+      const mine = rows.filter((row) => row.provider === provider);
+      const mineSaved = mine.filter((row) => row.final);
+      return {
+        provider,
+        descriptions: mine.length,
+        saved: mineSaved.length,
+        acceptedShare: mineSaved.length ? mineSaved.filter((row) => row.outcome === "accepted").length / mineSaved.length : null,
+        typeKeptShare: mineSaved.length ? mineSaved.filter((row) => !row.changes.some((change) => change.field === "type")).length / mineSaved.length : null,
+        meanConfidence: mine.length ? mine.reduce((sum, row) => sum + row.jev.confidence, 0) / mine.length : null
+      };
+    }),
     calibration: buckets.map(({ bucket, test }) => {
       const inBucket = saved.filter((row) => test(row.jev.confidence));
       const kept = inBucket.filter((row) => !row.changes.some((change) => change.field === "type")).length;
@@ -179,6 +196,7 @@ export function trainingJsonl(rows: CorrectionRow[]): string {
         ts: row.ts,
         prompt: row.prompt,
         outcome: row.outcome,
+        provider: row.provider,
         jev: { type: row.jev.type, confidence: row.jev.confidence, probabilities: row.jev.probabilities, title: row.jev.title, optionsText: row.jev.optionsText, config: row.jev.config },
         labels: row.final ? { type: row.final.type, title: row.final.title, options: row.final.options.map((option) => option.label), config: row.final.config, opened: row.opened, deleted: row.deleted } : null,
         corrections: row.changes,

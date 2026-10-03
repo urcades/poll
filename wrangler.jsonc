@@ -10,5 +10,7 @@
   "assets": { "directory": ".svelte-kit/cloudflare/assets", "binding": "ASSETS" },
   "durable_objects": { "bindings": [{ "name": "APP", "class_name": "PollApp" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["PollApp"] }],
+  // Workers AI, for Clef (describing a vote in words).
+  "ai": { "binding": "AI" },
   "observability": { "enabled": true }
 }

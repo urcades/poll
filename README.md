@@ -29,9 +29,11 @@ This project started as a local exploration of Loomio-style poll creation and la
 
 The home page has a text field: type what you want decided ("Which two films Friday: Past Lives, Perfect Days or Poor Things?", "Elect 2 organizers from Ada, Ben, Chen, Diana and Eli, anonymous") and the new-poll editor opens already filled in. Nothing is created until you save; the editor shows what was filled in and which other voting methods were close.
 
-How it works: code finds the candidate options (bullet lines, a list after a colon or "between/from", or a list in the closing sentence), the numbers, and the title. One request to [TypeSafe](https://typesafe.ai)'s Jev model then makes only the judgment calls, as closed questions it answers with choices and probabilities rather than free text: which of the 12 voting methods fits, which settings the wording asks for (anonymous, voters may change their vote, a reason is required), what each number means (seats, pick limit, point budget, top score, ranked choices, meeting minutes or hours, option count), and which candidate items are real options. An answer must be at least 70% sure to change the form, and every filled value is checked against what the editor allows (for example seats must be fewer than the candidates). Time-poll slots are not read from the text; the editor offers upcoming ones. Responses take well under a second.
+How it works: code finds the candidate options (bullet lines, a list after a colon or "between/from", or a list in the closing sentence), the numbers, and the title. One request to a decision model then makes only the judgment calls, as closed questions it answers with choices and probabilities rather than free text: which of the 12 voting methods fits, which settings the wording asks for (anonymous, voters may change their vote, a reason is required), what each number means (seats, pick limit, point budget, top score, ranked choices, meeting minutes or hours, option count), and which candidate items are real options. An answer must be at least 70% sure to change the form, and every filled value is checked against what the editor allows (for example seats must be fewer than the candidates). Time-poll slots are not read from the text; the editor offers upcoming ones.
 
-Set `TYPESAFE_API_KEY` on the server (`.env` locally, see `.env.example`; `fly secrets set TYPESAFE_API_KEY=...` on Fly). Without it the field is shown disabled with a note. The key stays on the server, the description is sent only to `api.typesafe.ai`, and it travels to the editor in browser navigation state, never in a URL. Each description counts against the creation rate limit. Agents do not need this: over MCP they choose the method and fill the settings themselves (`list_poll_types`, `create_poll`).
+**Models.** [Cloudflare's Clef](https://blog.cloudflare.com/clef-decision-models/) (Workers AI, `@cf/cloudflare/clef`) is the default; TypeSafe's Jev speaks the same API and is the fallback. On the Cloudflare Worker, Clef runs through the `AI` binding, so there is no credential to manage. Anywhere else (Node, Fly, local development) set `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` (a token with Workers AI read/run permission), or `TYPESAFE_API_KEY` for Jev. `DESCRIBE_PROVIDER=jev` or `clef` forces one, which is also the quick way back if a model misbehaves. Each described prompt records which model read it (see Usage Log), and the corrections page compares them. Without any of these the field is shown disabled with a note.
+
+The description is sent only to the chosen model's API and travels to the editor in browser navigation state, never in a URL. Each description counts against the creation rate limit. Agents do not need this: over MCP they choose the method and fill the settings themselves (`list_poll_types`, `create_poll`).
 
 ## Usage Log
 
@@ -39,8 +41,8 @@ Everything notable is recorded as an event in an `events` table in the app's own
 
 | Kind | What it holds |
 | --- | --- |
-| `describe`, `describe_failed` | The prompt, the whole pre-filled suggestion, Jev's raw answers and probabilities, model, token usage, latency, and a `suggestionId` |
-| `poll_created`, `poll_updated` | Everything set up in the poll: type, title, details, settings, options, times, invitee count. `poll_created` carries the `suggestionId` and `fromDescription`: which fields the person changed from what Jev filled in |
+| `describe`, `describe_failed` | The prompt, the whole pre-filled suggestion, the model's raw answers and probabilities, which model (`provider`: clef or jev), token usage, latency, and a `suggestionId` |
+| `poll_created`, `poll_updated` | Everything set up in the poll: type, title, details, settings, options, times, invitee count. `poll_created` carries the `suggestionId` and `fromDescription`: which fields the person changed from what the model filled in |
 | `poll_opened`, `poll_scheduled`, `poll_unscheduled`, `poll_closed`, `poll_duplicated`, `poll_deleted`, `invitees_added`, `export` | Lifecycle, with vote counts where relevant |
 | `vote_cast`, `vote_rejected` | The ballot, reason, voter name (not on anonymous polls), the option labels, and whether it replaced an earlier vote; for rejections, only why |
 | `mcp_initialize`, `mcp_tool` | Which agent client connected; each tool call with duration, success and the argument names (never values) |
@@ -53,7 +55,7 @@ Every event also has a timestamp, a source (`web`, `api`, `mcp`, `browser`), the
 
 **Reading it:** sign in with `/events?admin=<OPERATOR_TOKEN>` (anyone else gets a 404). The page filters by kind, kind prefix, poll, session, source, text and dates, shows counts per day and kind, expands each event's data, and downloads the same filter as JSON or CSV (`/events/export.json`, `/events/export.csv`). Agents connected as the operator use `get_usage_events`. To follow one prompt through: filter `kind=describe`, copy its `suggestionId`, then search that text.
 
-**Jev corrections:** `/events/corrections` joins every description to what became of it, using the log alone. For each one it shows Jev's reading (voting method with its probabilities, title, options, settings) next to the poll the person finally saved, including edits made to the draft afterwards, and lists the corrections field by field: `type`, `title`, `options` (what was added, removed or reordered), `optionCount` (when Jev only knew how many), and each `config.*` setting. A setting is flagged "Jev missed it" when Jev left it at the default and the person changed it; otherwise Jev set it wrongly. Each description gets an outcome: `accepted` (saved unchanged), `corrected`, `rephrased` (described again within 30 minutes without saving; the retry is shown), `abandoned` (nothing saved after an hour) or `pending`. The summary gives the share accepted, the correction rate by field, which voting methods Jev gets confused (Jev said X, they chose Y, and whether Y was a close second Jev had listed), and calibration: how often the method survives, by Jev's stated confidence. `/events/corrections/export.jsonl` (or `get_jev_corrections` with `format: "jsonl"`) downloads one line per description: the prompt, Jev's prediction and raw probabilities, and the corrected labels (`?saved=1` keeps only labelled rows), shaped for evaluating Jev or training a classifier. Rewrites that never become polls are in the log too, so unlabelled prompts remain available.
+**Model corrections:** `/events/corrections` joins every description to what became of it, using the log alone. For each one it shows the model's reading (voting method with its probabilities, title, options, settings) next to the poll the person finally saved, including edits made to the draft afterwards, and lists the corrections field by field: `type`, `title`, `options` (what was added, removed or reordered), `optionCount` (when the model only knew how many), and each `config.*` setting. A setting is flagged "model missed it" when the model left it at the default and the person changed it; otherwise it set it wrongly. Each description gets an outcome: `accepted` (saved unchanged), `corrected`, `rephrased` (described again within 30 minutes without saving; the retry is shown), `abandoned` (nothing saved after an hour) or `pending`. The summary gives the share accepted, the correction rate by field, a side-by-side of the models (Clef against Jev: share kept as filled, how often the method survives, mean confidence), which voting methods get confused (the model said X, they chose Y, and whether Y was a close second it had listed), and calibration: how often the method survives, by the model's stated confidence. `/events/corrections/export.jsonl` (or `get_jev_corrections` with `format: "jsonl"`) downloads one line per description: the prompt, which model read it, its prediction and raw probabilities, and the corrected labels (`?saved=1` keeps only labelled rows), shaped for evaluating a model or training a classifier. Rewrites that never become polls are in the log too, so unlabelled prompts remain available.
 
 **Settings:** `EVENT_LOG=off` disables recording; `EVENT_RETENTION_DAYS` (default 365) drops older events; `EVENT_STDOUT=off` keeps rows but skips the stdout line.
 
@@ -76,7 +78,7 @@ Tools:
 | `get_results` | The tally, following the poll's visibility rules | anyone allowed to see it |
 | `list_my_polls` | Polls this session created, voted in or was invited to (everything for the operator) | session |
 | `get_usage_events` | The usage log with filters and per-day counts (see Usage Log) | operator |
-| `get_jev_corrections` | How Jev's readings were corrected: per-field corrections, outcomes, statistics, training export (see Usage Log) | operator |
+| `get_jev_corrections` | How the model's readings were corrected (name kept from when Jev was the only model): per-field corrections, outcomes, statistics, training export (see Usage Log) | operator |
 | `update_draft` | Partial edit of a draft (only the fields passed change) | admin |
 | `open_poll`, `schedule_poll`, `unschedule_poll`, `close_poll` | Lifecycle; `schedule_poll` can set `opensAt` in the same call | admin |
 | `add_invitees` | Invite more people; returns their personal links | admin |
@@ -204,7 +206,7 @@ fly scale count 1
 
 The database lives at `/data/votes.sqlite` on the volume. `auto_stop_machines` is enabled; cold starts are a few seconds and the data survives them.
 
-To turn on [describing a vote in words](#describe-a-vote-in-words), set the key as a secret before deploying: `fly secrets set TYPESAFE_API_KEY=<your key>`.
+To turn on [describing a vote in words](#describe-a-vote-in-words) on Fly, set `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` (Clef) or `TYPESAFE_API_KEY` (Jev) as secrets with `fly secrets set`.
 
 ### Backups With Litestream
 
@@ -225,12 +227,11 @@ The app is one stateful process (SQLite, in-memory rate limits and MCP sessions)
 bun run build:cloudflare                 # ADAPTER=cloudflare vite build
 npx wrangler dev --local                 # try it locally (state in .wrangler/)
 bun run test:e2e:worker                  # the browser suite against the Worker
-npx wrangler secret put TYPESAFE_API_KEY # optional: describing a vote in words
-npx wrangler secret put OPERATOR_TOKEN   # optional
+npx wrangler secret put OPERATOR_TOKEN   # optional: usage log access
 npx wrangler deploy
 ```
 
-Or deploy with the `cf` CLI, which can't build SvelteKit projects itself (v1.0.0-beta): `npm run cf:package` builds the app, bundles the Worker with Wrangler without deploying, and writes it in cf's prebuilt format (`.cloudflare/output`); then `cf deploy --prebuilt --secrets-file .env` deploys it to the account cf is signed in to. Without a `routes` or custom domain the Worker is served at `poll.<your-subdomain>.workers.dev`. The Node build (`bun run build`, Docker, Fly) is unchanged and remains the default.
+Or deploy with the `cf` CLI, which can't build SvelteKit projects itself (v1.0.0-beta): `npm run cf:package` builds the app, bundles the Worker with Wrangler without deploying, and writes it in cf's prebuilt format (`.cloudflare/output`); then `cf deploy --prebuilt --secrets-file .env` deploys it to the account cf is signed in to. Describing a vote in words uses Clef through the Worker's `AI` binding (declared in `wrangler.jsonc`; Workers AI usage is billed to the account, with a free daily allowance). Without a `routes` or custom domain the Worker is served at `poll.<your-subdomain>.workers.dev`. The Node build (`bun run build`, Docker, Fly) is unchanged and remains the default.
 
 ## Useful Commands
 

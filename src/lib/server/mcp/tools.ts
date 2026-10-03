@@ -862,8 +862,8 @@ export const tools: ToolDefinition[] = [
   },
   {
     name: "get_jev_corrections",
-    title: "Read how Jev's readings were corrected",
-    description: "Instance operator only. Every plain-language description joined to what became of it: Jev's reading (voting method with confidence, title, options, settings), the poll the person finally saved, and the field-level corrections between them (including settings Jev missed), with an outcome per description (accepted, corrected, rephrased, abandoned, pending). Returns summary statistics (correction rate by field, voting-method confusions, confidence calibration) and rows. Set format to \"jsonl\" for training-ready lines of prompt, Jev's prediction and the corrected labels.",
+    title: "Read how the model's readings were corrected",
+    description: "Instance operator only. Every plain-language description joined to what became of it: the model's reading (Clef or Jev; voting method with confidence, title, options, settings), the poll the person finally saved, and the field-level corrections between them (including settings the model missed), with an outcome per description (accepted, corrected, rephrased, abandoned, pending). Returns summary statistics (per-model comparison, correction rate by field, voting-method confusions, confidence calibration) and rows. Set format to \"jsonl\" for training-ready lines of prompt, the model's prediction and the corrected labels.",
     inputSchema: {
       type: "object",
       properties: {
@@ -877,7 +877,7 @@ export const tools: ToolDefinition[] = [
     },
     annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     run(args, ctx) {
-      if (!isOperator(ctx.jar)) throw new ToolError("Only the instance operator can read Jev's corrections. Connect with the operator token as the bearer token.");
+      if (!isOperator(ctx.jar)) throw new ToolError("Only the instance operator can read the model corrections. Connect with the operator token as the bearer token.");
       const limit = Math.min(Math.max(Math.trunc(Number(args.limit)) || 100, 1), 500);
       const all = correctionRows({ since: typeof args.since === "string" ? args.since : undefined, until: typeof args.until === "string" ? args.until : undefined, limit });
       const rows = typeof args.outcome === "string" ? all.filter((row) => row.outcome === args.outcome) : all;

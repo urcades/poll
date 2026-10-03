@@ -8,9 +8,10 @@ export type { Suggestion };
  * Turns a plain-language description ("which two films for Friday: A, B, C or
  * D?") into a pre-filled poll: the voting method, settings the wording implies,
  * and the options. Code does the mechanical parts (finding candidate options
- * and numbers, writing the title); TypeSafe's Jev model makes only the
- * judgment calls, all in ONE request of closed questions (it answers with
- * choices and probabilities, never free text):
+ * and numbers, writing the title); a decision model (Cloudflare's Clef, or
+ * TypeSafe's Jev, which speak the same API) makes only the judgment calls, all
+ * in ONE request of closed questions (it answers with choices and
+ * probabilities, never free text):
  *   - which voting method fits (a choice over the 12 types),
  *   - which settings the wording asks for (yes/no questions),
  *   - what each number in the text means (a choice per number),
@@ -20,6 +21,7 @@ export type { Suggestion };
 
 export const TYPESAFE_ENDPOINT = "https://api.typesafe.ai/v1/systemone";
 export const TYPESAFE_MODEL = "jev-latest";
+export const CLEF_MODEL_ID = "@cf/cloudflare/clef";
 export const MAX_PROMPT_LENGTH = 2000;
 
 /** Probability an answer needs before it changes the form. */
@@ -48,7 +50,10 @@ export interface SystemOneResponse {
 }
 
 /** Sends one request to the model. Swappable so tests need no network. */
-export type Ask = (request: SystemOneRequest) => Promise<SystemOneResponse>;
+export type Ask = ((request: SystemOneRequest) => Promise<SystemOneResponse>) & {
+  /** Which model answered, for the usage log: "clef", "jev" (or whatever a test sets). */
+  providerName?: string;
+};
 
 export class SuggestError extends Error {
   constructor(message: string, readonly status = 502) {
@@ -64,7 +69,7 @@ export function typesafeApiKey(): string {
 export type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
 
 export function typesafeAsk(apiKey: string, fetchImpl: FetchLike = fetch): Ask {
-  return async (request) => {
+  const ask: Ask = async (request) => {
     for (let attempt = 0; ; attempt += 1) {
       let response: Response;
       try {
@@ -89,6 +94,73 @@ export function typesafeAsk(apiKey: string, fetchImpl: FetchLike = fetch): Ask {
       throw new SuggestError("The description service couldn't read that. Try rephrasing, or start from New vote/proposal.");
     }
   };
+  ask.providerName = "jev";
+  return ask;
+}
+
+/** The Workers AI binding's one method (only present inside the Cloudflare Worker). */
+export interface WorkersAi {
+  run(model: string, input: unknown): Promise<unknown>;
+}
+
+/** Replies come back bare from the binding and wrapped in `{ result }` from the REST API. */
+function unwrap(reply: unknown): SystemOneResponse {
+  const body = reply as { result?: unknown; answers?: unknown } | null;
+  const inner = (body && typeof body === "object" && "result" in body && body.result ? body.result : body) as SystemOneResponse | null;
+  if (!inner || typeof inner !== "object" || typeof inner.answers !== "object") throw new SuggestError("The description service didn't return a usable answer. Try rephrasing.");
+  return inner;
+}
+
+function busyOrFailed(status: number | null): never {
+  if (status === 401 || status === 403) throw new SuggestError("This server's Cloudflare credentials were rejected.", 503);
+  if (status === 429 || status === 529 || status === 503) throw new SuggestError("The description service is busy. Try again in a moment.", 503);
+  throw new SuggestError("The description service couldn't read that. Try rephrasing, or start from New vote/proposal.");
+}
+
+/** Clef through the Workers AI binding: no credentials to manage inside the Worker. */
+export function clefBindingAsk(ai: WorkersAi): Ask {
+  const ask: Ask = async (request) => {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return unwrap(await ai.run(CLEF_MODEL_ID, { ...request, model: "clef" }));
+      } catch (error) {
+        if (error instanceof SuggestError) throw error;
+        const status = Number((error as { status?: unknown }).status) || (/\b(429|529|503)\b/.exec(String((error as Error)?.message))?.[1] ? 429 : null);
+        if (status === 429 && attempt === 0) {
+          await new Promise((resolve) => setTimeout(resolve, 700));
+          continue;
+        }
+        console.error("Workers AI request failed", error instanceof Error ? error.message : error);
+        busyOrFailed(status);
+      }
+    }
+  };
+  ask.providerName = "clef";
+  return ask;
+}
+
+/** Clef over the Workers AI REST API, for running anywhere else (Node, Fly, local development). */
+export function clefRestAsk(accountId: string, apiToken: string, fetchImpl: FetchLike = fetch): Ask {
+  const url = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/ai/run/${CLEF_MODEL_ID}`;
+  const ask: Ask = async (request) => {
+    for (let attempt = 0; ; attempt += 1) {
+      let response: Response;
+      try {
+        response = await fetchImpl(url, { method: "POST", headers: { authorization: `Bearer ${apiToken}`, "content-type": "application/json" }, body: JSON.stringify({ ...request, model: "clef" }), signal: AbortSignal.timeout(20_000) });
+      } catch {
+        throw new SuggestError("Couldn't reach the description service. Try again, or start from New vote/proposal.", 503);
+      }
+      if (response.ok) return unwrap(await response.json());
+      if ((response.status === 429 || response.status === 529) && attempt === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 700));
+        continue;
+      }
+      console.error(`Workers AI request failed with HTTP ${response.status}`);
+      busyOrFailed(response.status);
+    }
+  };
+  ask.providerName = "clef";
+  return ask;
 }
 
 let askOverride: Ask | null = null;
@@ -97,10 +169,24 @@ export function setAskForTesting(ask: Ask | null) {
   askOverride = ask;
 }
 
+/**
+ * Which model reads descriptions. Clef when the Worker has its AI binding or
+ * CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_API_TOKEN are set; otherwise Jev when
+ * TYPESAFE_API_KEY is. DESCRIBE_PROVIDER=jev (or clef) forces one, which is the
+ * quick way back if a model misbehaves.
+ */
 export function currentAsk(): Ask | null {
   if (askOverride) return askOverride;
+  const forced = (process.env.DESCRIBE_PROVIDER ?? "").trim().toLowerCase();
+  const ai = (globalThis as { __pollAi?: WorkersAi }).__pollAi;
+  const accountId = (process.env.CLOUDFLARE_ACCOUNT_ID ?? "").trim();
+  const apiToken = (process.env.CLOUDFLARE_API_TOKEN ?? "").trim();
+  const clef = ai ? clefBindingAsk(ai) : accountId && apiToken ? clefRestAsk(accountId, apiToken) : null;
   const key = typesafeApiKey();
-  return key ? typesafeAsk(key) : null;
+  const jev = key ? typesafeAsk(key) : null;
+  if (forced === "jev") return jev;
+  if (forced === "clef") return clef;
+  return clef ?? jev;
 }
 
 // ---- What each voting method is for, as the model sees it ----------------

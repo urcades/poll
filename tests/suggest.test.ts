@@ -11,6 +11,10 @@ import {
   SuggestError,
   titleFor,
   TYPESAFE_ENDPOINT,
+  CLEF_MODEL_ID,
+  clefBindingAsk,
+  clefRestAsk,
+  currentAsk,
   typesafeAsk,
   type Ask,
   type SystemOneRequest
@@ -285,5 +289,83 @@ describe("the home page action", () => {
   test("each description counts against the creation rate limit", () => {
     expect(classifyRequest("POST", "/", "?/suggest")).toBe("create");
     expect(classifyRequest("POST", "/", "")).toBe("mutate");
+  });
+});
+
+describe("Clef", () => {
+  const request: SystemOneRequest = { model: "jev-latest", state: { request: "x" }, questions: {} };
+  const reply = { model: "clef", answers: { a: { type: "noul", noul: 0.9 } }, usage: { input_tokens: 3, output_tokens: 0 } };
+  const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+
+  test("the REST client posts the request to the account's model with a bearer token and unwraps the result", async () => {
+    let captured: { url: string; init: RequestInit } | null = null;
+    const ask = clefRestAsk("acct123", "tok-secret", async (url, init) => {
+      captured = { url, init };
+      return json({ success: true, result: reply });
+    });
+    expect(await ask(request)).toEqual(reply);
+    expect(captured!.url).toBe(`https://api.cloudflare.com/client/v4/accounts/acct123/ai/run/${CLEF_MODEL_ID}`);
+    expect((captured!.init.headers as Record<string, string>).authorization).toBe("Bearer tok-secret");
+    expect(JSON.parse(String(captured!.init.body))).toMatchObject({ model: "clef", state: { request: "x" } });
+    expect(ask.providerName).toBe("clef");
+  });
+
+  test("REST failures are friendly and never mention the token", async () => {
+    const rejected = await clefRestAsk("a", "tok-secret", async () => json({}, 401))(request).catch((error) => error);
+    expect(rejected).toBeInstanceOf(SuggestError);
+    expect(rejected.message).toContain("rejected");
+    expect(rejected.message).not.toContain("tok-secret");
+    expect((await clefRestAsk("a", "t", async () => json({}, 422))(request).catch((error) => error)).message).toContain("couldn't read that");
+    expect((await clefRestAsk("a", "t", async () => { throw new Error("ECONNREFUSED tok-secret"); })(request).catch((error) => error)).message).not.toContain("ECONNREFUSED");
+    let calls = 0;
+    expect(await clefRestAsk("a", "t", async () => (++calls === 1 ? json({}, 429) : json({ result: reply })))(request)).toEqual(reply);
+    expect(calls).toBe(2);
+    expect((await clefRestAsk("a", "t", async () => json({ success: true, result: null }))(request).catch((error) => error)).message).toContain("usable answer");
+  });
+
+  test("the Workers AI binding is called with the model id and accepts bare or wrapped replies", async () => {
+    const calls: Array<{ model: string; input: Record<string, unknown> }> = [];
+    const ask = clefBindingAsk({ run: async (model, input) => (calls.push({ model, input: input as Record<string, unknown> }), reply) });
+    expect(await ask(request)).toEqual(reply);
+    expect(calls[0]).toMatchObject({ model: CLEF_MODEL_ID, input: { model: "clef", state: { request: "x" } } });
+    expect(await clefBindingAsk({ run: async () => ({ result: reply }) })(request)).toEqual(reply);
+
+    const failed = await clefBindingAsk({ run: async () => { throw Object.assign(new Error("AiError 3040: capacity"), { status: 429 }); } })(request).catch((error) => error);
+    expect(failed.message).toContain("busy");
+    const broken = await clefBindingAsk({ run: async () => { throw new Error("boom with details"); } })(request).catch((error) => error);
+    expect(broken).toBeInstanceOf(SuggestError);
+    expect(broken.message).not.toContain("details");
+  });
+
+  test("Clef is used when available, Jev otherwise, and DESCRIBE_PROVIDER forces either", () => {
+    const keep = { ...process.env };
+    const g = globalThis as { __pollAi?: unknown };
+    const reset = () => {
+      for (const key of ["DESCRIBE_PROVIDER", "CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN", "TYPESAFE_API_KEY"]) delete process.env[key];
+      delete g.__pollAi;
+    };
+    try {
+      reset();
+      expect(currentAsk()).toBeNull();
+      process.env.TYPESAFE_API_KEY = "jev-key";
+      expect(currentAsk()?.providerName).toBe("jev");
+      process.env.CLOUDFLARE_ACCOUNT_ID = "acct";
+      expect(currentAsk()?.providerName).toBe("jev"); // an account id alone is not enough
+      process.env.CLOUDFLARE_API_TOKEN = "tok";
+      expect(currentAsk()?.providerName).toBe("clef");
+      process.env.DESCRIBE_PROVIDER = "jev";
+      expect(currentAsk()?.providerName).toBe("jev");
+      delete process.env.DESCRIBE_PROVIDER;
+      reset();
+      g.__pollAi = { run: async () => reply };
+      expect(currentAsk()?.providerName).toBe("clef"); // the Worker's binding
+      process.env.DESCRIBE_PROVIDER = "jev";
+      expect(currentAsk()).toBeNull(); // forced to a provider that is not configured
+      process.env.DESCRIBE_PROVIDER = "clef";
+      expect(currentAsk()?.providerName).toBe("clef");
+    } finally {
+      reset();
+      Object.assign(process.env, keep);
+    }
   });
 });

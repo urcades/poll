@@ -44,7 +44,7 @@ export const actions = {
       return fail(500, { error: "Something went wrong reading that. Try again." });
     }
     const answered = reply as SystemOneResponse | null;
-    logEvent("describe", { suggestionId: suggestion.id, prompt, suggestion, modelAnswers: answered?.answers ?? null, model: answered?.model ?? null, usage: answered?.usage ?? null, latencyMs: Date.now() - started });
+    logEvent("describe", { suggestionId: suggestion.id, prompt, suggestion, provider: ask.providerName ?? "unknown", modelAnswers: answered?.answers ?? null, model: answered?.model ?? null, usage: answered?.usage ?? null, latencyMs: Date.now() - started });
     // Without JavaScript the form can't carry the whole suggestion across; open the editor on the right method.
     if (!request.headers.has("x-sveltekit-action")) redirect(303, `/new?type=${suggestion.type}`);
     return { suggestion };

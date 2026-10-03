@@ -36,14 +36,15 @@ function cookieJar(initial: Record<string, string> = {}) {
 }
 
 /** Records a description the way the home page does. */
-function describeAs(session: string, id: string, prompt: string, suggestion: Record<string, unknown>, probabilities: Record<string, number> = { [String(suggestion.type)]: 1 }) {
+function describeAs(session: string, id: string, prompt: string, suggestion: Record<string, unknown>, probabilities: Record<string, number> = { [String(suggestion.type)]: 1 }, provider = "jev") {
   runWithContext({ source: "web", path: "/", session }, () =>
     logEvent("describe", {
       suggestionId: id,
       prompt,
       suggestion: { id, confidence: probabilities[String(suggestion.type)] ?? 1, alternatives: [], config: {}, optionsText: null, notes: [], ...suggestion },
       modelAnswers: { type: { type: "choice", choice: suggestion.type, probabilities } },
-      model: "jev-test"
+      provider,
+      model: "test-model"
     })
   );
 }
@@ -138,6 +139,7 @@ describe("what became of each description", () => {
     expect(stats.acceptedShare).toBe(0.5);
     expect(stats.fieldCorrections.map((row) => [row.field, row.count])).toEqual([["type", 1], ["title", 1], ["options", 1]]);
     expect(stats.typeConfusions).toEqual([{ jev: "choose", final: "approval", count: 1 }]);
+    expect(stats.providers).toEqual([expect.objectContaining({ provider: "jev", descriptions: 5, saved: 2, acceptedShare: 0.5, typeKeptShare: 0.5 })]);
     expect(stats.calibration.find((row) => row.bucket === "95%+")).toMatchObject({ saved: 1, typeKept: 1, typeKeptShare: 1 });
     expect(stats.calibration.find((row) => row.bucket === "60-80%")).toMatchObject({ saved: 1, typeKept: 0, typeKeptShare: 0 });
   });
@@ -157,6 +159,25 @@ describe("what became of each description", () => {
     expect(lines.find((line) => line.id === "abandonedEEE5").labels).toBeNull();
     // No tokens in the export.
     expect(JSON.stringify(lines)).not.toContain("adminToken");
+  });
+});
+
+describe("comparing models", () => {
+  test("rows carry the model that read them, and the summary compares models", () => {
+    describeAs("s1", "cmpClefAAAA1", "Which film: A or B?", { type: "choose", title: "Which film", optionsText: "A\nB" }, { choose: 0.9 }, "clef");
+    save({ type: "choose", title: "Which film", optionsText: "A\nB", suggestionId: "cmpClefAAAA1" });
+    describeAs("s2", "cmpJevBBBBB2", "Where? X or Y", { type: "choose", title: "Where", optionsText: "X\nY" }, { choose: 0.6 }, "jev");
+    save({ type: "approval", title: "Where", optionsText: "X\nY", suggestionId: "cmpJevBBBBB2" });
+    // Events logged before models were recorded are treated as Jev's.
+    runWithContext({ source: "web", path: "/", session: "old" }, () => logEvent("describe", { suggestionId: "legacyCCCCC3", prompt: "old", suggestion: { type: "majority", title: "old", config: {}, optionsText: null, confidence: 1, alternatives: [] } }));
+
+    const rows = correctionRows({ now: Date.now() });
+    expect(Object.fromEntries(rows.map((row) => [row.suggestionId, row.provider]))).toEqual({ cmpClefAAAA1: "clef", cmpJevBBBBB2: "jev", legacyCCCCC3: "jev" });
+    const stats = correctionStats(rows);
+    expect(stats.providers.map((row) => row.provider)).toEqual(["clef", "jev"]);
+    expect(stats.providers[0]).toMatchObject({ provider: "clef", saved: 1, acceptedShare: 1, typeKeptShare: 1 });
+    expect(stats.providers[1]).toMatchObject({ provider: "jev", descriptions: 2, saved: 1, acceptedShare: 0, typeKeptShare: 0 });
+    expect(JSON.parse(trainingJsonl(rows).split("\n")[0]!).provider).toBeDefined();
   });
 });
 

@@ -10,6 +10,8 @@ import sveltekit from "../.svelte-kit/cloudflare/_worker.js";
 
 interface Env {
   APP: DurableObjectNamespace<PollApp>;
+  /** Workers AI: runs Clef for describing a vote in words. */
+  AI?: { run(model: string, input: unknown): Promise<unknown> };
 }
 
 export class PollApp extends DurableObject<Env> {
@@ -17,6 +19,8 @@ export class PollApp extends DurableObject<Env> {
     super(ctx, env);
     // src/lib/server/app.ts opens the store on this storage.
     (globalThis as { __pollDurableStorage?: unknown }).__pollDurableStorage = ctx.storage;
+    // src/lib/server/suggest.ts reads the AI binding from here.
+    (globalThis as { __pollAi?: unknown }).__pollAi = env.AI;
   }
 
   fetch(request: Request): Promise<Response> {
